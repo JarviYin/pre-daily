@@ -1,0 +1,267 @@
+/* 极简黑白报纸风格 */
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #ffffff;
+  color: #000000;
+  line-height: 1.8;
+  min-height: 100vh;
+}
+
+.container {
+  width: 100%;
+  padding: 20px 16px;
+  margin: 0 auto;
+  min-height: 100vh;
+  max-width: 900px;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 40px 32px;
+  }
+}
+
+/* 卡片样式 */
+.card {
+  background: #ffffff;
+  border: 1px solid #000000;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* 标题样式 */
+.header {
+  margin-bottom: 32px;
+  color: #000000;
+  text-align: center;
+  border-bottom: 2px solid #000000;
+  padding-bottom: 16px;
+}
+
+h1 {
+  font-family: 'Times New Roman', serif;
+  font-size: 48px;
+  font-weight: 900;
+  margin-bottom: 8px;
+  color: #000000;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  line-height: 1.1;
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 36px;
+    letter-spacing: 1px;
+  }
+}
+
+.header-subtitle {
+  font-size: 16px;
+  color: #666666;
+  font-weight: 400;
+  display: block;
+  margin-top: 8px;
+}
+
+/* 章节标题 */
+h2 {
+  font-family: 'Georgia', serif;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: #000000;
+  border-bottom: 1px solid #000000;
+  padding-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 640px) {
+  h2 {
+    font-size: 22px;
+  }
+}
+
+/* 摘要内容 */
+.summary-content {
+  font-size: 18px;
+  line-height: 2.0;
+  color: #333333;
+  margin-bottom: 24px;
+  text-align: justify;
+  background: #f8f8f8;
+  padding: 20px;
+  border: 1px solid #cccccc;
+  border-left: 4px solid #000000;
+  border-radius: 0;
+}
+
+@media (max-width: 640px) {
+  .summary-content {
+    font-size: 16px;
+    padding: 16px;
+  }
+}
+
+/* 新闻条目 */
+.news-item {
+  padding: 20px 0;
+  border-bottom: 1px dashed #cccccc;
+}
+
+.news-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.news-item-title {
+  font-family: 'Georgia', serif;
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #000000;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .news-item-title {
+    font-size: 18px;
+  }
+}
+
+.news-item-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background-color: #000000;
+  color: #ffffff;
+  border-radius: 0;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.news-item-content {
+  font-size: 17px;
+  color: #333333;
+  line-height: 1.9;
+  margin-left: 40px;
+  text-align: justify;
+}
+
+@media (max-width: 640px) {
+  .news-item-content {
+    font-size: 16px;
+    margin-left: 0;
+    margin-top: 8px;
+  }
+}
+
+.volume-badge {
+  margin-left: 12px;
+  font-size: 14px;
+  color: #666666;
+  font-weight: normal;
+  text-transform: lowercase;
+}
+
+/* 元信息 */
+.meta {
+  font-size: 14px;
+  color: #666666;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #cccccc;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta-label {
+  font-weight: 600;
+  color: #333333;
+}
+
+.meta-value {
+  color: #000000;
+}
+
+/* 加载状态 */
+.loading {
+  text-align: center;
+  padding: 80px 20px;
+  color: #000000;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(0, 0, 0, 0.3);
+  border-top-color: #000000;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 错误状态 */
+.error {
+  background-color: #ffebeb;
+  color: #cc0000;
+  border: 1px solid #cc0000;
+  padding: 20px;
+  border-radius: 0;
+  margin-bottom: 24px;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666666;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.7;
+}
+
+.empty-state-text {
+  font-size: 16px;
+  margin-bottom: 24px;
+  color: #888888;
+}
+
