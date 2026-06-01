@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatTimestamp } from "@/lib/date";
+import { SubscribeLink } from "./SubscribeCTA";
 
 export function Footer({
   modelId,
@@ -20,6 +21,7 @@ export function Footer({
         <Link href="/archive" className="text-muted transition-colors hover:text-bull">
           往期归档
         </Link>
+        <SubscribeLink />
         <a
           href="https://polymarket.com"
           target="_blank"
