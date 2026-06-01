@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatCnDate } from "@/lib/date";
 import { FreshnessBadge } from "./FreshnessBadge";
+import { SubscribeButton } from "./SubscribeCTA";
 
 export function Masthead({
   date,
@@ -21,6 +22,8 @@ export function Masthead({
       <p className="mt-3 text-center text-[13px] text-muted sm:text-sm">
         预测市场中文早报 · 每天 8:00 用 3 分钟读懂全球真金白银在押注什么
       </p>
+
+      <SubscribeButton />
 
       <div className="masthead-rule mt-6 h-px w-full" />
 
