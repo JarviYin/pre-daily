@@ -1,0 +1,137 @@
+import { eq, desc } from "drizzle-orm";
+import { getDb } from "./index";
+import { dailyIssues, issueItems } from "./schema";
+import type { DailyIssue, DailyMarket } from "../types";
+
+/** Idempotent publish: upsert the edition + replace its items atomically. */
+export async function upsertIssue(issue: DailyIssue): Promise<void> {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(dailyIssues)
+      .values({
+        date: issue.date,
+        summary: issue.summary,
+        modelId: issue.modelId,
+        summaryModelId: issue.summaryModelId,
+        generatedAt: new Date(issue.generatedAt),
+        costUsd: issue.costUsd,
+      })
+      .onConflictDoUpdate({
+        target: dailyIssues.date,
+        set: {
+          summary: issue.summary,
+          modelId: issue.modelId,
+          summaryModelId: issue.summaryModelId,
+          generatedAt: new Date(issue.generatedAt),
+          costUsd: issue.costUsd,
+        },
+      });
+
+    // Replace items for this date (idempotent re-runs).
+    await tx.delete(issueItems).where(eq(issueItems.issueDate, issue.date));
+    if (issue.markets.length > 0) {
+      await tx.insert(issueItems).values(
+        issue.markets.map((m) => ({
+          issueDate: issue.date,
+          rank: m.rank,
+          marketId: m.marketId,
+          slug: m.slug,
+          sourceUrl: m.sourceUrl,
+          title: m.title,
+          category: m.category,
+          volume: m.volume,
+          volume24hr: m.volume24hr,
+          liquidity: m.liquidity,
+          endDate: m.endDate,
+          leadingChange: m.leadingChange,
+          outcomes: m.outcomes,
+          analysis: m.analysis,
+        }))
+      );
+    }
+  });
+}
+
+function rowsToIssue(
+  head: typeof dailyIssues.$inferSelect,
+  items: (typeof issueItems.$inferSelect)[]
+): DailyIssue {
+  const markets: DailyMarket[] = items
+    .sort((a, b) => a.rank - b.rank)
+    .map((it) => ({
+      rank: it.rank,
+      marketId: it.marketId,
+      slug: it.slug,
+      sourceUrl: it.sourceUrl,
+      title: it.title,
+      category: it.category,
+      volume: it.volume,
+      volume24hr: it.volume24hr,
+      liquidity: it.liquidity,
+      endDate: it.endDate,
+      leadingChange: it.leadingChange,
+      outcomes: it.outcomes,
+      analysis: it.analysis ?? null,
+    }));
+  return {
+    date: head.date,
+    summary: head.summary,
+    modelId: head.modelId,
+    summaryModelId: head.summaryModelId,
+    generatedAt: head.generatedAt.toISOString(),
+    costUsd: head.costUsd,
+    markets,
+  };
+}
+
+export async function getIssue(date: string): Promise<DailyIssue | null> {
+  const db = getDb();
+  const head = await db
+    .select()
+    .from(dailyIssues)
+    .where(eq(dailyIssues.date, date))
+    .limit(1);
+  if (head.length === 0) return null;
+  const items = await db
+    .select()
+    .from(issueItems)
+    .where(eq(issueItems.issueDate, date));
+  return rowsToIssue(head[0], items);
+}
+
+export async function getLatestIssueDate(): Promise<string | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ date: dailyIssues.date })
+    .from(dailyIssues)
+    .orderBy(desc(dailyIssues.date))
+    .limit(1);
+  return rows[0]?.date ?? null;
+}
+
+export async function getLatestIssue(): Promise<DailyIssue | null> {
+  const date = await getLatestIssueDate();
+  return date ? getIssue(date) : null;
+}
+
+/** All published edition dates, newest first (for archive + sitemap + SSG). */
+export async function listIssueDates(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ date: dailyIssues.date })
+    .from(dailyIssues)
+    .orderBy(desc(dailyIssues.date));
+  return rows.map((r) => r.date);
+}
+
+/** Edition heads (date + summary) for the archive index, newest first. */
+export async function listIssueHeads(): Promise<
+  { date: string; summary: string }[]
+> {
+  const db = getDb();
+  return db
+    .select({ date: dailyIssues.date, summary: dailyIssues.summary })
+    .from(dailyIssues)
+    .orderBy(desc(dailyIssues.date));
+}

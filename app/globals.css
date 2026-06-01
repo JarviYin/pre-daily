@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Prediction Daily — dark markets-terminal theme
+   Dark-first. A light "newspaper" theme can be layered later via
+   [data-theme="light"] without touching component code.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --bg: #0a0b0e;        /* near-black canvas */
+  --surface: #14161b;   /* card surface */
+  --surface-2: #1b1e25; /* nested / hover */
+  --line: #262a33;      /* hairline borders */
+  --fg: #e7e9ee;        /* primary text */
+  --muted: #9aa1ad;     /* secondary text */
+  --faint: #697080;     /* tertiary / captions */
+
+  --bull: #19e09a;      /* leading / bullish — electric green */
+  --bull-dim: rgba(25, 224, 154, 0.14);
+  --bear: #ff5d6c;      /* falling / bearish — red */
+  --bear-dim: rgba(255, 93, 108, 0.14);
+  --warn: #f5b13d;      /* caution / stale — amber */
+  --accent: #19e09a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-bull: var(--bull);
+  --color-bull-dim: var(--bull-dim);
+  --color-bear: var(--bear);
+  --color-bear-dim: var(--bear-dim);
+  --color-warn: var(--warn);
+  --color-accent: var(--accent);
+
+  --font-sans: var(--font-geist-sans), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo,
+    monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* All numerals align in columns (probabilities, volumes, percentages). */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Subtle hairline rule for the masthead. */
+.masthead-rule {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line) 18%,
+    var(--line) 82%,
+    transparent
+  );
+}
+
+/* Probability bar fill transition (purely cosmetic, SSR-safe). */
+.bar-fill {
+  transition: width 0.4s ease;
+}
+
+::selection {
+  background: var(--bull);
+  color: #04130c;
+}
