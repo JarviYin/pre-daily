@@ -1,23 +1,43 @@
 import { deriveCategory } from "./categories";
-import type { Category, Outcome } from "./types";
+import { curate } from "./curation";
+import type { Badge, Category, EditionRole, Outcome } from "./types";
 
 // ─────────────────────────────────────────────────────────────
-// Polymarket Gamma API ingestion.
+// Polymarket Gamma API ingestion + edition selection.
+//
+// The edition is NOT "top N by volume" (that surfaces the same evergreen mega
+// markets every day). It is "today's MOVERS": markets ranked by a composite
+// HEAT score over 24h price movement, volume acceleration, newness and
+// resolution-imminence — gated by liquidity, with mechanical churn
+// (sports/esports/price-ladders) removed in lib/curation.ts.
+//
 // Endpoint shape verified live: /events?active=true&closed=false
 //   &order=volume24hr&ascending=false&limit=N → Event[]
-// Key gotchas (all handled below):
+// Gotchas (all handled below):
 //  • market.outcomes / market.outcomePrices are JSON-ENCODED STRINGS.
-//  • Multi-outcome events (negRisk) have many sub-markets; each is a
-//    "Will <candidate> win?" Yes/No market. The candidate's probability
-//    is that sub-market's "Yes" price; the name is groupItemTitle.
+//  • Multi-outcome events (negRisk) have one sub-market per candidate; the
+//    candidate's probability is that sub-market's "Yes" price (groupItemTitle).
 //  • endDate can be in the past even when closed=false → must filter.
 // ─────────────────────────────────────────────────────────────
 
 const GAMMA_BASE = "https://gamma-api.polymarket.com";
-const FETCH_LIMIT = 60; // over-fetch, then curate down to TOP_N
+const FETCH_LIMIT = 150; // over-fetch by 24h volume, then curate + heat-rank down
 const MAX_OUTCOMES = 6; // top outcomes shown; remainder folded into "其他"
-const DEFAULT_MAX_PER_CATEGORY = 3; // editorial: avoid one topic monopolising
-const SETTLED_THRESHOLD = 0.985; // leading prob ≥ this ⇒ basically decided, no signal
+const MAX_PER_CATEGORY = 3; // editorial: stop one topic monopolising the board
+const SETTLED_THRESHOLD = 0.985; // leading prob ≥ this ⇒ basically decided
+const LIQ_FLOOR = 25_000; // credibility gate: ignore thin/manipulable pools
+const NEW_DAYS = 4; // created within this many days ⇒ "新晋"
+const HERO_MIN_MOVE = 0.03; // a hero needs at least a 3pt 24h swing
+const ANCHOR_COUNT = 2; // evergreen high-volume markets kept for context
+const MOVE_FULL = 0.15; // a 15pt 24h swing scores full marks on the move term
+const SURGE_CAP = 8; // cap volume-acceleration so new markets don't saturate
+
+// Badge thresholds (kept here so QA can re-derive them identically).
+const BADGE_MOVE = 0.05; // 异动: |24h move| ≥ 5pt
+const BADGE_SURGE = 2; // 放量: 24h volume ≥ 2× own 7d daily average
+const SOON_DAYS = 10; // 临近揭晓 window
+const UNCERTAIN_LO = 0.15; // still a contest if leader is within [15%, 85%]
+const UNCERTAIN_HI = 0.85;
 
 type RawTag = { label?: string; slug?: string };
 type RawMarket = {
@@ -36,8 +56,12 @@ type RawEvent = {
   slug?: string;
   negRisk?: boolean;
   enableNegRisk?: boolean;
+  new?: boolean;
+  createdAt?: string;
   volume?: string | number;
   volume24hr?: string | number;
+  volume1wk?: string | number;
+  volume1mo?: string | number;
   liquidity?: string | number;
   endDate?: string;
   closed?: boolean;
@@ -53,9 +77,17 @@ export type RawCuratedMarket = {
   category: Category;
   volume: number;
   volume24hr: number;
+  volume1wk: number;
   liquidity: number;
   endDate: string | null;
-  leadingChange: number | null;
+  leadingChange: number | null; // 24h move of the LEADING outcome
+  move24h: number | null; // 24h move of the HEADLINE (most-moved) outcome, signed
+  headlineOption: string | null; // label of the most-moved outcome
+  surge: number; // 24h volume / own 7d daily avg (≥1 = accelerating)
+  isNew: boolean;
+  heatScore: number; // filled by selectEdition
+  role: EditionRole; // filled by selectEdition
+  badges: Badge[]; // filled by selectEdition
   outcomes: Outcome[];
 };
 
@@ -111,12 +143,19 @@ async function fetchTopEvents(limit: number): Promise<RawEvent[]> {
 /**
  * Build the normalised, sorted outcome distribution for one event.
  * Returns null when the event is NOT a clean probability partition we can
- * honestly display (e.g. a non-negRisk bundle of independent "by date" or
- * prop markets that would sum to >100%), or when it is effectively settled.
+ * honestly display (e.g. a non-negRisk bundle of independent markets that would
+ * sum to >100%), or when it is effectively settled.
+ *
+ * `move24h` is the signed 24h change of the HEADLINE outcome (the one that
+ * moved most), used to rank "today's movers"; `leadingChange` tracks only the
+ * top line. `headlineOption` is the label of that most-moved outcome.
  */
-function buildOutcomes(
-  ev: RawEvent
-): { outcomes: Outcome[]; leadingChange: number | null } | null {
+function buildOutcomes(ev: RawEvent): {
+  outcomes: Outcome[];
+  leadingChange: number | null;
+  move24h: number | null;
+  headlineOption: string | null;
+} | null {
   const markets = (ev.markets ?? []).filter(
     (m) => m.active !== false && m.closed !== true
   );
@@ -128,8 +167,6 @@ function buildOutcomes(
   let raw: { option: string; probability: number; change: number | null }[] = [];
 
   if (isPartition) {
-    // Mutually-exclusive multi-outcome (negRisk): one sub-market per candidate,
-    // probability = that sub-market's "Yes" price.
     for (const m of markets) {
       const names = parseJsonArray(m.outcomes).map(String);
       const prices = parseJsonArray(m.outcomePrices).map(toNum);
@@ -137,7 +174,7 @@ function buildOutcomes(
         console.warn(
           `[gamma] event ${ev.id} sub-market malformed outcomes (names=${names.length}, prices=${prices.length})`
         );
-        continue; // skip this candidate rather than guess
+        continue;
       }
       const yesIdx = names.findIndex((n) => n.toLowerCase() === "yes");
       if (yesIdx < 0) {
@@ -154,7 +191,6 @@ function buildOutcomes(
       });
     }
   } else if (markets.length === 1) {
-    // Single binary market: show its real Yes / No outcomes.
     const m = markets[0];
     const names = parseJsonArray(m.outcomes).map(String);
     const prices = parseJsonArray(m.outcomePrices).map(toNum);
@@ -174,44 +210,70 @@ function buildOutcomes(
       });
     });
   } else {
-    // Non-negRisk event with multiple INDEPENDENT markets (date ladders, prop
-    // bundles). These are not a partition; displaying them as one would be
-    // misleading (>100%). Skip — correctness over coverage.
+    // Non-negRisk multi-market bundle (date ladders, prop bundles): not a
+    // partition; showing as one would mislead (>100%). Skip — correctness first.
     return null;
   }
 
-  raw = raw
-    .filter((o) => o.probability > 0)
-    .sort((a, b) => b.probability - a.probability);
+  raw = raw.filter((o) => o.probability > 0);
   if (raw.length === 0) return null;
 
-  // Normalise so the distribution sums to exactly 1 (negRisk Yes-prices drift
-  // a point or two from microstructure; this is what Polymarket shows too).
+  // Normalise probabilities to sum to 1, AND scale each outcome's 24h change
+  // into the SAME normalized space — so a reconstructed before/after
+  // (after − change) stays internally consistent with the shown probability.
   const total = raw.reduce((s, o) => s + o.probability, 0);
   if (total <= 0) return null;
-  for (const o of raw) o.probability /= total;
+  for (const o of raw) {
+    o.probability /= total;
+    if (o.change != null) o.change /= total;
+  }
+
+  // HEADLINE move = the outcome with the largest absolute 24h change. Computed
+  // in build order (pre-sort) so a binary's Yes/No tie resolves to Yes.
+  let headline: { option: string; change: number } | null = null;
+  for (const o of raw) {
+    if (o.change == null) continue;
+    if (!headline || Math.abs(o.change) > Math.abs(headline.change)) {
+      headline = { option: o.option, change: o.change };
+    }
+  }
+
+  raw.sort((a, b) => b.probability - a.probability);
 
   // Drop effectively-settled markets — a 99.9% line carries no signal.
   if (raw[0].probability >= SETTLED_THRESHOLD) return null;
 
   const leadingChange = raw[0].change ?? null;
+  const move24h =
+    headline && Math.abs(headline.change) >= 0.005 ? headline.change : null;
+  const headlineOption = move24h != null ? headline!.option : null;
 
   let outcomes: Outcome[] = raw.map((o) => ({
     option: o.option,
     probability: o.probability,
   }));
 
-  // Fold the long tail into "其他" so the shown bars still sum to ~100%.
   if (outcomes.length > MAX_OUTCOMES) {
     const head = outcomes.slice(0, MAX_OUTCOMES);
-    const tailSum = outcomes
-      .slice(MAX_OUTCOMES)
-      .reduce((s, o) => s + o.probability, 0);
+    const tail = outcomes.slice(MAX_OUTCOMES);
+    // Never fold away the HEADLINE outcome — the hero's before/after must refer
+    // to a row that is actually shown. Swap it in for the weakest head row.
+    if (headlineOption && !head.some((o) => o.option === headlineOption)) {
+      const hi = tail.findIndex((o) => o.option === headlineOption);
+      if (hi >= 0) {
+        const [h] = tail.splice(hi, 1);
+        const demoted = head.pop();
+        if (demoted) tail.push(demoted);
+        head.push(h);
+        head.sort((a, b) => b.probability - a.probability);
+      }
+    }
+    const tailSum = tail.reduce((s, o) => s + o.probability, 0);
     if (tailSum > 0) head.push({ option: "其他", probability: tailSum });
     outcomes = head;
   }
 
-  return { outcomes, leadingChange };
+  return { outcomes, leadingChange, move24h, headlineOption };
 }
 
 function eventToMarket(ev: RawEvent, now: number): RawCuratedMarket | null {
@@ -223,13 +285,33 @@ function eventToMarket(ev: RawEvent, now: number): RawCuratedMarket | null {
     if (Number.isFinite(end) && end < now) return null;
   }
 
-  const built = buildOutcomes(ev);
-  if (!built) return null;
-  const { outcomes, leadingChange } = built;
-
   const tagStrings = (ev.tags ?? [])
     .flatMap((t) => [t.slug, t.label])
     .filter((x): x is string => typeof x === "string");
+
+  // Curation: drop mechanical churn (sports/esports/price-ladders).
+  const verdict = curate(tagStrings, ev.title ?? "");
+  if (!verdict.keep) {
+    console.warn(`[curate] drop "${(ev.title ?? "").slice(0, 50)}" — ${verdict.reason}`);
+    return null;
+  }
+
+  const built = buildOutcomes(ev);
+  if (!built) return null;
+  const { outcomes, leadingChange, move24h, headlineOption } = built;
+
+  const volume24hr = toNum(ev.volume24hr);
+  const volume1wk = toNum(ev.volume1wk);
+  const volume1mo = toNum(ev.volume1mo);
+  // Surge = today's volume vs the market's OWN recent daily average (not an
+  // absolute figure — that is what de-biases evergreen mega-markets).
+  const wkAvg = volume1wk > 0 ? volume1wk / 7 : volume1mo > 0 ? volume1mo / 30 : 0;
+  const surge = wkAvg > 0 ? Math.min(volume24hr / wkAvg, SURGE_CAP) : 1;
+
+  const ageDays = ev.createdAt
+    ? (now - Date.parse(ev.createdAt)) / 86_400_000
+    : Infinity;
+  const isNew = ev.new === true || (Number.isFinite(ageDays) && ageDays <= NEW_DAYS);
 
   return {
     marketId: String(ev.id ?? ev.slug),
@@ -238,56 +320,158 @@ function eventToMarket(ev: RawEvent, now: number): RawCuratedMarket | null {
     title: (ev.title ?? "").trim(),
     category: deriveCategory(tagStrings, ev.title ?? ""),
     volume: toNum(ev.volume),
-    volume24hr: toNum(ev.volume24hr),
+    volume24hr,
+    volume1wk,
     liquidity: toNum(ev.liquidity),
     endDate: ev.endDate ?? null,
     leadingChange,
+    move24h,
+    headlineOption,
+    surge,
+    isNew,
+    heatScore: 0, // filled by selectEdition
+    role: "heat", // filled by selectEdition
+    badges: [], // filled by selectEdition
     outcomes,
   };
 }
 
-/**
- * Pick TOP_N markets by 24h volume, but cap how many can come from any one
- * category (default 3) so a single topic (e.g. sports) can't monopolise the
- * edition. Leftover slots are filled by remaining volume order.
- */
-function curate(
-  markets: RawCuratedMarket[],
-  topN: number,
-  maxPerCategory = DEFAULT_MAX_PER_CATEGORY
-): RawCuratedMarket[] {
-  const sorted = [...markets].sort((a, b) => b.volume24hr - a.volume24hr);
-  const counts: Partial<Record<Category, number>> = {};
-  const picked: RawCuratedMarket[] = [];
-  const overflow: RawCuratedMarket[] = [];
-
-  for (const m of sorted) {
-    if (picked.length >= topN) break;
-    const c = counts[m.category] ?? 0;
-    if (c < maxPerCategory) {
-      counts[m.category] = c + 1;
-      picked.push(m);
-    } else {
-      overflow.push(m);
-    }
-  }
-  // If quotas left us short, top up from overflow (still volume-ordered).
-  for (const m of overflow) {
-    if (picked.length >= topN) break;
-    picked.push(m);
-  }
-  return picked.slice(0, topN);
+/** Composite "today's heat" score. Higher = more worth a reader's attention. */
+function heatScore(m: RawCuratedMarket, now: number): number {
+  const moveTerm = Math.min(Math.abs(m.move24h ?? 0) / MOVE_FULL, 1);
+  const surgeTerm = Math.min(Math.log2(Math.max(m.surge, 1)) / 3, 1); // 8x ⇒ 1
+  const newTerm = m.isNew ? 1 : 0;
+  const soonTerm = isResolvingSoon(m, now) ? 1 : 0;
+  const liqTerm = Math.min(Math.log10(Math.max(m.liquidity, 1)) / 7, 1);
+  return 1.0 * moveTerm + 0.5 * surgeTerm + 0.4 * newTerm + 0.4 * soonTerm + 0.15 * liqTerm;
 }
 
-/** End-to-end: fetch → parse → filter → curate. Throws on fetch failure. */
-export async function getCuratedMarkets(
-  topN: number,
-  maxPerCategory = DEFAULT_MAX_PER_CATEGORY
-): Promise<RawCuratedMarket[]> {
+/**
+ * A coarse topic key so near-duplicate markets that differ only by a date
+ * horizon collapse to one ("…returns to normal by July 31?" vs "…by end of
+ * June?"). Cut the title at date-qualifier prepositions, then keep the leading
+ * significant words.
+ */
+function topicKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\?+$/, "")
+    // Cut ONLY at a date-horizon "by …" (the qualifier that creates near-dup
+    // markets, e.g. "…by July 31" vs "…by end of June"). Requiring a date-like
+    // token after "by" avoids merging "passed by Senate" with "passed by House".
+    .split(
+      /\s+by\s+(?=(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*|end of|q[1-4]|\d))/
+    )[0]
+    .replace(/[^a-z0-9 ]/g, "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 8)
+    .join(" ");
+}
+
+function isResolvingSoon(m: RawCuratedMarket, now: number): boolean {
+  if (!m.endDate) return false;
+  const days = (Date.parse(m.endDate) - now) / 86_400_000;
+  if (!(days > 0 && days <= SOON_DAYS)) return false;
+  const lead = m.outcomes[0]?.probability ?? 0;
+  return lead >= UNCERTAIN_LO && lead <= UNCERTAIN_HI;
+}
+
+function badgesFor(m: RawCuratedMarket, now: number): Badge[] {
+  if (m.role === "anchor") return ["持续高热"];
+  const out: Badge[] = [];
+  if (m.move24h != null && Math.abs(m.move24h) >= BADGE_MOVE) out.push("异动");
+  if (m.surge >= BADGE_SURGE) out.push("放量");
+  if (m.isNew) out.push("新晋");
+  if (isResolvingSoon(m, now)) out.push("临近揭晓");
+  return out;
+}
+
+/**
+ * Compose the edition in three layers from curated, liquidity-gated markets:
+ *   hero   — the single biggest 24h mover (the day's headline)
+ *   heat   — markets by composite heat score (category-capped)
+ *   anchor — up to ANCHOR_COUNT evergreen high-volume markets for context
+ * Returns markets in DISPLAY order (hero first, anchors last).
+ */
+function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMarket[] {
+  const now = Date.now();
+  const eligible = markets.filter((m) => m.liquidity >= LIQ_FLOOR);
+  const dropped = markets.length - eligible.length;
+  if (dropped > 0) console.warn(`[select] ${dropped} markets below $${LIQ_FLOOR} liquidity gate`);
+  if (eligible.length === 0) return [];
+
+  for (const m of eligible) m.heatScore = heatScore(m, now);
+
+  const chosen: RawCuratedMarket[] = [];
+  const used = new Set<string>();
+  const usedTopics = new Set<string>();
+  const catCount: Partial<Record<Category, number>> = {};
+  const take = (m: RawCuratedMarket, role: EditionRole) => {
+    m.role = role;
+    chosen.push(m);
+    used.add(m.marketId);
+    usedTopics.add(topicKey(m.title));
+    catCount[m.category] = (catCount[m.category] ?? 0) + 1;
+  };
+  const isDuplicate = (m: RawCuratedMarket) =>
+    used.has(m.marketId) || usedTopics.has(topicKey(m.title));
+
+  // 1) Hero — biggest absolute 24h move (with a meaningful floor). Quiet day:
+  //    fall back to the single highest heat score.
+  const movers = eligible
+    .filter((m) => m.move24h != null && Math.abs(m.move24h) >= HERO_MIN_MOVE)
+    .sort((a, b) => Math.abs(b.move24h!) - Math.abs(a.move24h!));
+  const hero =
+    movers[0] ?? [...eligible].sort((a, b) => b.heatScore - a.heatScore)[0];
+  if (hero) take(hero, "hero");
+
+  // 2) Anchors — evergreen context: top by TOTAL volume, not already chosen.
+  const anchorPool = eligible
+    .filter((m) => !isDuplicate(m))
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, ANCHOR_COUNT);
+  const anchorIds = new Set(anchorPool.map((m) => m.marketId));
+
+  // 3) Heat list fills the middle, category-capped + topic-deduped, leaving
+  //    room for anchors. Reserved anchors are skipped here so they can't be
+  //    consumed by the heat loop (which would shrink the anchor section).
+  const heatBudget = Math.max(topN - chosen.length - anchorPool.length, 0);
+  const ranked = [...eligible].sort((a, b) => b.heatScore - a.heatScore);
+  for (const m of ranked) {
+    if (chosen.length - (hero ? 1 : 0) >= heatBudget) break;
+    if (isDuplicate(m) || anchorIds.has(m.marketId)) continue;
+    if ((catCount[m.category] ?? 0) >= MAX_PER_CATEGORY) continue;
+    take(m, "heat");
+  }
+
+  // 4) Append anchors (skip any pulled into the heat list / duplicate topics).
+  for (const m of anchorPool) {
+    if (chosen.length >= topN) break;
+    if (isDuplicate(m)) continue;
+    take(m, "anchor");
+  }
+
+  // 5) Top up to topN from remaining heat order if still short (relax cat cap,
+  //    keep topic dedup).
+  if (chosen.length < topN) {
+    for (const m of ranked) {
+      if (chosen.length >= topN) break;
+      if (isDuplicate(m)) continue;
+      take(m, "heat");
+    }
+  }
+
+  for (const m of chosen) m.badges = badgesFor(m, now);
+  return chosen.slice(0, topN);
+}
+
+/** End-to-end: fetch → parse → curate → heat-rank → compose edition. */
+export async function getEditionMarkets(topN: number): Promise<RawCuratedMarket[]> {
   const now = Date.now();
   const events = await fetchTopEvents(FETCH_LIMIT);
   const parsed = events
     .map((e) => eventToMarket(e, now))
     .filter((m): m is RawCuratedMarket => m !== null && m.title.length > 0);
-  return curate(parsed, topN, maxPerCategory);
+  return selectEdition(parsed, topN);
 }

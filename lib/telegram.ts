@@ -8,15 +8,24 @@ import { formatPct } from "./format";
 // TELEGRAM_CHANNEL_ID (e.g. "@prediction_daily" or a numeric -100… id).
 
 function topMovers(issue: DailyIssue, n = 3): string {
+  // Prefer the headline 24h move (any outcome); fall back to the leading line.
+  const moveOf = (m: DailyIssue["markets"][number]) => m.move24h ?? m.leadingChange;
   return issue.markets
-    .filter((m) => m.leadingChange != null && Math.abs(m.leadingChange) >= 0.01)
-    .sort((a, b) => Math.abs(b.leadingChange!) - Math.abs(a.leadingChange!))
+    .filter((m) => {
+      const mv = moveOf(m);
+      return mv != null && Math.abs(mv) >= 0.01;
+    })
+    .sort((a, b) => Math.abs(moveOf(b)!) - Math.abs(moveOf(a)!))
     .slice(0, n)
     .map((m) => {
-      const lead = m.outcomes[0];
-      const arrow = m.leadingChange! > 0 ? "▲" : "▼";
-      const pts = (Math.abs(m.leadingChange!) * 100).toFixed(1);
-      return `${arrow} ${m.title} — ${lead.option} ${formatPct(lead.probability)} (${pts}pt)`;
+      const mv = moveOf(m)!;
+      // When the move came from move24h, the figure belongs to the HEADLINE
+      // outcome (often not the leader) — show that outcome, not outcomes[0].
+      const opt = m.move24h != null ? m.headlineOption ?? m.outcomes[0].option : m.outcomes[0].option;
+      const o = m.outcomes.find((x) => x.option === opt) ?? m.outcomes[0];
+      const arrow = mv > 0 ? "▲" : "▼";
+      const pts = (Math.abs(mv) * 100).toFixed(1);
+      return `${arrow} ${m.title} — ${o.option} ${formatPct(o.probability)} (${pts}pt)`;
     })
     .join("\n");
 }

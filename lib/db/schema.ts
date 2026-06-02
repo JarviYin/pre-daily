@@ -2,13 +2,20 @@ import {
   pgTable,
   text,
   integer,
+  boolean,
   doublePrecision,
   timestamp,
   jsonb,
   serial,
   index,
 } from "drizzle-orm/pg-core";
-import type { MarketAnalysis, Outcome, Category } from "../types";
+import type {
+  MarketAnalysis,
+  Outcome,
+  Category,
+  EditionRole,
+  Badge,
+} from "../types";
 
 // One published daily edition.
 export const dailyIssues = pgTable("daily_issues", {
@@ -36,9 +43,18 @@ export const issueItems = pgTable(
     category: text("category").$type<Category>().notNull(),
     volume: doublePrecision("volume").notNull().default(0),
     volume24hr: doublePrecision("volume_24hr").notNull().default(0),
+    volume1wk: doublePrecision("volume_1wk").notNull().default(0),
     liquidity: doublePrecision("liquidity").notNull().default(0),
     endDate: text("end_date"),
     leadingChange: doublePrecision("leading_change"),
+    // v2.1 heat/edition fields (nullable/defaulted ⇒ safe for pre-existing rows).
+    move24h: doublePrecision("move_24h"),
+    headlineOption: text("headline_option"),
+    surge: doublePrecision("surge").notNull().default(1),
+    isNew: boolean("is_new").notNull().default(false),
+    role: text("role").$type<EditionRole>().notNull().default("heat"),
+    heatScore: doublePrecision("heat_score").notNull().default(0),
+    badges: jsonb("badges").$type<Badge[]>().notNull().default([]),
     outcomes: jsonb("outcomes").$type<Outcome[]>().notNull(),
     analysis: jsonb("analysis").$type<MarketAnalysis | null>(),
   },

@@ -20,7 +20,7 @@ export function Masthead({
         </h1>
       </Link>
       <p className="mt-3 text-center text-[13px] text-muted sm:text-sm">
-        预测市场中文早报 · 每天 8:00 用 3 分钟读懂全球真金白银在押注什么
+        预测市场中文早报 · 每天 8:00，3 分钟看懂真金白银今日在重新定价什么
       </p>
 
       <SubscribeButton />

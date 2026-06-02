@@ -24,6 +24,17 @@ export type MarketAnalysis = {
   risk: string; // 可信度 / 风险提示（流动性、解析标准、临近截止等）
 };
 
+// Why a market earned its slot in TODAY's edition. Drives the visual badges
+// and explains the "what changed today" framing instead of raw volume rank.
+export const BADGES = ["异动", "放量", "新晋", "临近揭晓", "持续高热"] as const;
+export type Badge = (typeof BADGES)[number];
+
+// An edition is composed in three layers, not a flat volume list:
+//  • hero   — the single biggest 24h probability swing (the day's headline)
+//  • heat   — markets ranked by a composite "today's heat" score
+//  • anchor — 1-2 evergreen high-volume markets kept for context
+export type EditionRole = "hero" | "heat" | "anchor";
+
 // One ranked market within a daily edition (maps to issue_items row).
 export type DailyMarket = {
   rank: number;
@@ -33,11 +44,22 @@ export type DailyMarket = {
   title: string;
   category: Category;
   volume: number; // total USD volume
-  volume24hr: number; // USD volume in last 24h (ranking signal)
+  volume24hr: number; // USD volume in last 24h
+  volume1wk: number; // USD volume in last 7d (surge baseline)
   liquidity: number; // USD liquidity (credibility signal)
   endDate: string | null; // ISO; resolution deadline
   // 24h change of the LEADING outcome's probability, in absolute points (e.g. +0.04).
   leadingChange: number | null;
+  // The HEADLINE 24h move: the outcome that moved most, signed (e.g. +0.18).
+  // This is what ranks "today's movers"; leadingChange tracks only the top line.
+  move24h: number | null;
+  headlineOption: string | null; // which outcome moved most (for the hero card)
+  // 24h volume relative to the market's own 7d daily average (≥1 = accelerating).
+  surge: number;
+  isNew: boolean; // created within the last few days OR Gamma's `new` flag
+  role: EditionRole;
+  heatScore: number; // composite ranking score (higher = hotter today)
+  badges: Badge[]; // why it's on today's board (derived, persisted for fidelity)
   outcomes: Outcome[]; // full distribution, sorted desc, sums to ~1
   analysis: MarketAnalysis | null;
 };

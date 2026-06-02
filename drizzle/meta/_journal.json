@@ -8,6 +8,20 @@
       "when": 1780300149241,
       "tag": "0000_same_magik",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780368865756,
+      "tag": "0001_heat_edition_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780369142722,
+      "tag": "0002_headline_option",
+      "breakpoints": true
     }
   ]
 }

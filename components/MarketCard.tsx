@@ -1,6 +1,7 @@
 import type { DailyMarket } from "@/lib/types";
 import { liquidityTier } from "@/lib/types";
 import { CategoryChip } from "./CategoryChip";
+import { BadgeRow } from "./BadgeRow";
 import { MoverChip } from "./MoverChip";
 import { ProbabilityBar } from "./ProbabilityBar";
 import { formatVolume, formatPct } from "@/lib/format";
@@ -9,31 +10,36 @@ const LIQ_LABEL: Record<string, string> = { high: "高", medium: "中", low: "�
 
 export function MarketCard({
   market,
-  maxVolume24hr,
+  rankLabel,
+  maxHeat,
 }: {
   market: DailyMarket;
-  maxVolume24hr: number;
+  rankLabel: number; // position within its section (1-based)
+  maxHeat: number; // for the accent strip width
 }) {
   const {
-    rank,
     title,
     category,
     outcomes,
     leadingChange,
     volume,
     volume24hr,
+    surge,
     liquidity,
+    heatScore,
+    badges,
     sourceUrl,
     analysis,
     endDate,
   } = market;
   const leader = outcomes[0];
   const liq = liquidityTier(liquidity);
-  const heft = maxVolume24hr > 0 ? Math.max(volume24hr / maxVolume24hr, 0.02) : 0;
+  // Accent strip encodes today's HEAT (not raw volume) — felt, not read.
+  const heft = maxHeat > 0 ? Math.max(heatScore / maxHeat, 0.02) : 0;
 
   return (
     <article className="relative overflow-hidden rounded-xl border border-line bg-surface">
-      {/* Volume-heft strip: width encodes 24h volume rank — felt, not read. */}
+      {/* Heat strip: width encodes the composite heat score. */}
       <div
         className="absolute left-0 top-0 h-[2px] bg-bull/60"
         style={{ width: `${heft * 100}%` }}
@@ -44,12 +50,17 @@ export function MarketCard({
         {/* Meta row */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="tnum w-5 text-right text-sm text-faint">{rank}</span>
+            <span className="tnum w-5 text-right text-sm text-faint">{rankLabel}</span>
             <CategoryChip category={category} />
           </div>
           <div className="tnum flex items-center gap-3 text-[12px] text-faint">
             <span title="累计成交量">成交 {formatVolume(volume)}</span>
             <span title="24小时成交量">24h {formatVolume(volume24hr)}</span>
+            {surge >= 2 && (
+              <span className="text-bull/80" title="相对自身近7日日均放量倍数">
+                放量 {surge.toFixed(1)}x
+              </span>
+            )}
             <span title="流动性（市场可信度）">流动性 {LIQ_LABEL[liq]}</span>
           </div>
         </div>
@@ -65,6 +76,8 @@ export function MarketCard({
             {title}
           </a>
         </h3>
+
+        <BadgeRow badges={badges} className="mt-2" />
 
         {/* Hero: leading outcome + probability + 24h move */}
         <div className="mt-3 flex items-baseline gap-3">
