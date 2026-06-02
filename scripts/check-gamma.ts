@@ -1,11 +1,11 @@
 // Throwaway QA harness for the Gamma ingestion module.
 // Run: pnpm tsx scripts/check-gamma.ts
-import { getCuratedMarkets } from "../lib/gamma";
+import { getEditionMarkets } from "../lib/gamma";
 import { CATEGORY_META } from "../lib/categories";
 
 async function main() {
-  const markets = await getCuratedMarkets(10);
-  console.log(`\nCurated ${markets.length} markets:\n`);
+  const markets = await getEditionMarkets(10);
+  console.log(`\nEdition: ${markets.length} markets:\n`);
   const catCount: Record<string, number> = {};
   for (let i = 0; i < markets.length; i++) {
     const m = markets[i];

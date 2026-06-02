@@ -39,9 +39,19 @@ export async function GET(req: Request) {
     revalidatePath("/archive");
 
     // Best-effort daily broadcast (never blocks/fails the publish).
+    // `?nopush=1` regenerates/publishes WITHOUT broadcasting — used for manual
+    // mid-day re-runs so the public channel doesn't get a duplicate post. This
+    // is a non-secret operational flag; auth still requires the Bearer header.
+    const nopush = new URL(req.url).searchParams.get("nopush") === "1";
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com";
-    const push = await sendDailyPush(issue, siteUrl);
-    console.log(`[cron] telegram push: ${push.sent ? "sent" : `skipped (${push.reason})`}`);
+    let pushSent = false;
+    if (nopush) {
+      console.log("[cron] telegram push: skipped (nopush flag)");
+    } else {
+      const push = await sendDailyPush(issue, siteUrl);
+      pushSent = push.sent;
+      console.log(`[cron] telegram push: ${push.sent ? "sent" : `skipped (${push.reason})`}`);
+    }
 
     return NextResponse.json({
       published: true,
@@ -51,6 +61,7 @@ export async function GET(req: Request) {
       summaryModel: issue.summaryModelId,
       costUsd: Number(issue.costUsd.toFixed(4)),
       generatedAt: issue.generatedAt,
+      pushed: pushSent,
     });
   } catch (err) {
     // HARD RULE: never fabricate or publish a broken edition. We simply did

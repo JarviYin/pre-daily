@@ -1,0 +1,1 @@
+ALTER TABLE "issue_items" ADD COLUMN "headline_option" text;
