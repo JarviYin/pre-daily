@@ -21,6 +21,9 @@ export function Footer({
         <Link href="/archive" className="text-muted transition-colors hover:text-bull">
           往期归档
         </Link>
+        <Link href="/about" className="text-muted transition-colors hover:text-bull">
+          关于
+        </Link>
         <SubscribeLink />
         <a
           href="https://polymarket.com"
