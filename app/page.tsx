@@ -12,10 +12,14 @@ export async function generateMetadata(): Promise<Metadata> {
     const dates = await listIssueDates();
     const date = dates[0];
     if (!date) return {};
+    const title = `${formatCnDate(date)} · 预测市场中文早报`;
     return {
-      // Canonicalise the homepage to the dated permalink to avoid duplicates.
-      alternates: { canonical: `/daily/${date}` },
-      title: `${formatCnDate(date)} · 预测市场中文早报`,
+      // Self-canonical: the root domain is its own strongest URL. The dated
+      // edition lives at /daily/<date> with its own canonical; duplication is
+      // handled by distinct titles + the NewsArticle's dated mainEntityOfPage.
+      alternates: { canonical: "/" },
+      title,
+      openGraph: { url: "/", title, type: "article" },
     };
   } catch {
     return {};

@@ -5,6 +5,8 @@ import { DailySummary } from "./DailySummary";
 import { HeroMover } from "./HeroMover";
 import { MarketCard } from "./MarketCard";
 import { Footer } from "./Footer";
+import { JsonLd } from "./JsonLd";
+import { graph, newsArticleNode, breadcrumbNode } from "@/lib/seo";
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -76,6 +78,7 @@ export function EditionView({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
+      <JsonLd data={graph(newsArticleNode(issue), breadcrumbNode(issue.date))} />
       <Masthead
         date={issue.date}
         generatedAt={issue.generatedAt}

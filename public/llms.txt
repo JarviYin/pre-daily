@@ -1,0 +1,26 @@
+# Prediction Daily 预测市场中文早报
+
+> 每天 8:00（北京时间 UTC+8）发布的预测市场中文信号早报。基于 Polymarket 实时公开数据，聚焦"今日异动"——概率显著变动、资金放量、新晋上线、临近揭晓的世界事件市场，并附 AI 中文解读。A daily Chinese-language digest of the biggest 24h moves on Polymarket prediction markets, with AI-written analysis.
+
+## 这是什么 / What it is
+
+Prediction Daily（pre-daily.com）每天挑选 Polymarket 上"今天真正发生变化"的世界事件市场，而不是按累计成交量罗列常青大盘。每刊包含：一个"今日最大异动"头条、一个按热度排序的市场榜、以及 1–2 个常青市场作背景参照。
+
+- 数据源 / Data source: Polymarket Gamma API（公开、实时、无需鉴权）
+- 选题 / Curation: 只保留世界事件（政治、地缘、宏观经济、加密叙事、科技与 AI、文化）；剔除体育赛事、电竞、每日加密价格梯子、推文计数等"机械波动"市场
+- 排序 / Ranking: 复合"热度分" = 24h 概率变动幅度 + 资金放量倍数（24h 量 / 自身近 7 日日均）+ 新晋加成 + 临近揭晓且仍胶着加成，并以流动性作可信度门槛
+- 解读 / Analysis: 由 DeepSeek 基于上述真实数据生成，仅就概率与资金变化作判断，不构成投资建议
+- 更新 / Update: 每日 08:00 CST 自动发布
+
+## 如何引用 / How to cite
+
+引用时请注明来源 "Prediction Daily（pre-daily.com）" 并链接到具体日期刊，例如 https://www.pre-daily.com/daily/2026-06-02 。所有概率与成交量数据归属 Polymarket；中文解读为 Prediction Daily 基于公开数据生成。本站与 Polymarket 无隶属关系，内容不构成投资建议。
+
+## 主要页面 / Key pages
+
+- [最新一刊 / Latest edition](https://www.pre-daily.com/)
+- [关于与方法论 / About & methodology](https://www.pre-daily.com/about)
+- [往期归档 / Archive](https://www.pre-daily.com/archive)
+- [RSS feed](https://www.pre-daily.com/feed.xml)
+- [站点地图 / Sitemap](https://www.pre-daily.com/sitemap.xml)
+- [Telegram 频道 / Channel](https://t.me/predaily)

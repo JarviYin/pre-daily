@@ -20,8 +20,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
+  const latest = dates[0];
   return [
-    { url: SITE, changeFrequency: "daily", priority: 1 },
+    {
+      url: SITE,
+      lastModified: latest ? `${latest}T00:00:00Z` : undefined,
+      changeFrequency: "daily",
+      priority: 1,
+    },
+    { url: `${SITE}/about`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE}/archive`, changeFrequency: "daily", priority: 0.5 },
     ...editions,
   ];
