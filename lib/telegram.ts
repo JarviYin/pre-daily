@@ -32,7 +32,8 @@ function topMovers(issue: DailyIssue, n = 3): string {
 
 export async function sendDailyPush(
   issue: DailyIssue,
-  siteUrl: string
+  siteUrl: string,
+  worldCup?: { headline: string; url: string }
 ): Promise<{ sent: boolean; reason?: string }> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const channel = process.env.TELEGRAM_CHANNEL_ID;
@@ -40,10 +41,14 @@ export async function sendDailyPush(
 
   const permalink = `${siteUrl.replace(/\/$/, "")}/daily/${issue.date}`;
   const movers = topMovers(issue);
+  const wcLine = worldCup
+    ? `🏆 世界杯专题：${worldCup.headline} → ${worldCup.url}\n\n`
+    : "";
   const text =
     `📊 预测市场中文早报 · ${formatCnDate(issue.date)}\n\n` +
     `${issue.summary}\n\n` +
     (movers ? `今日异动：\n${movers}\n\n` : "") +
+    wcLine +
     `全文（前 ${issue.markets.length} 市场 + 中文解读）→ ${permalink}`;
 
   try {

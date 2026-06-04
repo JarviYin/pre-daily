@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { EditionView } from "@/components/EditionView";
 import { getIssue, listIssueDates } from "@/lib/db/queries";
 import { formatCnDate, isValidDate } from "@/lib/date";
+import { getWcCard } from "@/lib/wc-card";
 
 export const revalidate = 300;
 export const dynamicParams = true;
@@ -61,6 +62,7 @@ export default async function DailyPage({ params }: Params) {
       prevDate={prevDate}
       nextDate={nextDate}
       editionNumber={editionNumber}
+      wcCard={await getWcCard()}
     />
   );
 }
