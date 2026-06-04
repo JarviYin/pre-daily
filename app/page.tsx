@@ -3,6 +3,7 @@ import { EditionView } from "@/components/EditionView";
 import { EmptyState } from "@/components/EmptyState";
 import { getLatestIssue, listIssueDates } from "@/lib/db/queries";
 import { formatCnDate } from "@/lib/date";
+import { getWcCard } from "@/lib/wc-card";
 
 // ISR: re-render at most every 5 min; cron also push-revalidates on publish.
 export const revalidate = 300;
@@ -44,6 +45,12 @@ export default async function Home() {
 
   if (!issue) return <EmptyState />;
   return (
-    <EditionView issue={issue} prevDate={prevDate} nextDate={null} editionNumber={editionNumber} />
+    <EditionView
+      issue={issue}
+      prevDate={prevDate}
+      nextDate={null}
+      editionNumber={editionNumber}
+      wcCard={await getWcCard()}
+    />
   );
 }

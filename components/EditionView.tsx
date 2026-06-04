@@ -7,6 +7,9 @@ import { MarketCard } from "./MarketCard";
 import { Footer } from "./Footer";
 import { JsonLd } from "./JsonLd";
 import { graph, newsArticleNode, breadcrumbNode } from "@/lib/seo";
+import { WorldCupCard } from "./WorldCupCard";
+
+export type WcCardData = { headline: string; leaderTeam?: string; leaderProb?: number };
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -58,11 +61,13 @@ export function EditionView({
   prevDate,
   nextDate,
   editionNumber,
+  wcCard,
 }: {
   issue: DailyIssue;
   prevDate?: string | null;
   nextDate?: string | null;
   editionNumber?: number;
+  wcCard?: WcCardData | null;
 }) {
   const hero = issue.markets.find((m) => m.role === "hero") ?? null;
   // Every v2.1 edition has a hero (the pipeline guarantees one). So NO hero ⇒
@@ -86,6 +91,16 @@ export function EditionView({
       />
       <DateNav prevDate={prevDate} nextDate={nextDate} />
       <DailySummary summary={issue.summary} />
+
+      {wcCard && (
+        <section className="mt-6">
+          <WorldCupCard
+            headline={wcCard.headline}
+            leaderTeam={wcCard.leaderTeam}
+            leaderProb={wcCard.leaderProb}
+          />
+        </section>
+      )}
 
       {hero && (
         <section className="mt-8">

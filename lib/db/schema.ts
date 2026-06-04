@@ -16,6 +16,8 @@ import type {
   EditionRole,
   Badge,
 } from "../types";
+import type { WcTeam } from "../worldcup";
+import type { WcTeamFocus } from "../wc-llm";
 
 // One published daily edition.
 export const dailyIssues = pgTable("daily_issues", {
@@ -61,5 +63,22 @@ export const issueItems = pgTable(
   (t) => [index("issue_items_date_rank_idx").on(t.issueDate, t.rank)]
 );
 
+// One daily World Cup special briefing (the "expand daily" dossier entry).
+export const wcBriefings = pgTable("wc_briefings", {
+  date: text("date").primaryKey(), // YYYY-MM-DD (Asia/Shanghai)
+  phase: text("phase").notNull(), // pre | group | knockout | final | after
+  angleKey: text("angle_key").notNull(),
+  title: text("title").notNull(), // the day's angle headline seed
+  headline: text("headline").notNull(), // LLM punchy hook
+  lede: text("lede").notNull(), // deep narrative
+  teamFocus: jsonb("team_focus").$type<WcTeamFocus[]>().notNull(),
+  oddsSnapshot: jsonb("odds_snapshot").$type<WcTeam[]>().notNull(), // top teams for display
+  lookAhead: text("look_ahead").notNull(),
+  modelId: text("model_id").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+  costUsd: doublePrecision("cost_usd").notNull().default(0),
+});
+
 export type DailyIssueRow = typeof dailyIssues.$inferSelect;
 export type IssueItemRow = typeof issueItems.$inferSelect;
+export type WcBriefingRow = typeof wcBriefings.$inferSelect;

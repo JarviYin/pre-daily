@@ -1,7 +1,8 @@
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "./index";
-import { dailyIssues, issueItems } from "./schema";
+import { dailyIssues, issueItems, wcBriefings } from "./schema";
 import type { DailyIssue, DailyMarket } from "../types";
+import type { WcBriefing } from "../wc-llm";
 
 /** Idempotent publish: upsert the edition + replace its items atomically. */
 export async function upsertIssue(issue: DailyIssue): Promise<void> {
@@ -150,4 +151,78 @@ export async function listIssueHeads(): Promise<
     .select({ date: dailyIssues.date, summary: dailyIssues.summary })
     .from(dailyIssues)
     .orderBy(desc(dailyIssues.date));
+}
+
+// ── World Cup special ──────────────────────────────────────────────────────
+
+function rowToWc(r: typeof wcBriefings.$inferSelect): WcBriefing {
+  return {
+    date: r.date,
+    phase: r.phase,
+    angleKey: r.angleKey,
+    title: r.title,
+    headline: r.headline,
+    lede: r.lede,
+    teamFocus: r.teamFocus,
+    oddsSnapshot: r.oddsSnapshot,
+    lookAhead: r.lookAhead,
+    modelId: r.modelId,
+    generatedAt: r.generatedAt.toISOString(),
+    costUsd: r.costUsd,
+  };
+}
+
+/** Idempotent upsert of one day's World Cup briefing. */
+export async function upsertWcBriefing(b: WcBriefing): Promise<void> {
+  const db = getDb();
+  const values = {
+    date: b.date,
+    phase: b.phase,
+    angleKey: b.angleKey,
+    title: b.title,
+    headline: b.headline,
+    lede: b.lede,
+    teamFocus: b.teamFocus,
+    oddsSnapshot: b.oddsSnapshot,
+    lookAhead: b.lookAhead,
+    modelId: b.modelId,
+    generatedAt: new Date(b.generatedAt),
+    costUsd: b.costUsd,
+  };
+  await db
+    .insert(wcBriefings)
+    .values(values)
+    .onConflictDoUpdate({ target: wcBriefings.date, set: values });
+}
+
+export async function getWcBriefing(date: string): Promise<WcBriefing | null> {
+  const db = getDb();
+  const rows = await db.select().from(wcBriefings).where(eq(wcBriefings.date, date)).limit(1);
+  return rows[0] ? rowToWc(rows[0]) : null;
+}
+
+export async function getLatestWcBriefing(): Promise<WcBriefing | null> {
+  const db = getDb();
+  const rows = await db.select().from(wcBriefings).orderBy(desc(wcBriefings.date)).limit(1);
+  return rows[0] ? rowToWc(rows[0]) : null;
+}
+
+/** Past briefing heads (date + title + headline) for the archive, newest first. */
+export async function listWcBriefingHeads(): Promise<
+  { date: string; title: string; headline: string }[]
+> {
+  const db = getDb();
+  return db
+    .select({ date: wcBriefings.date, title: wcBriefings.title, headline: wcBriefings.headline })
+    .from(wcBriefings)
+    .orderBy(desc(wcBriefings.date));
+}
+
+export async function listWcBriefingDates(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ date: wcBriefings.date })
+    .from(wcBriefings)
+    .orderBy(desc(wcBriefings.date));
+  return rows.map((r) => r.date);
 }

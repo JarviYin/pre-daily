@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { generateIssue } from "@/lib/pipeline";
-import { upsertIssue } from "@/lib/db/queries";
+import { upsertIssue, upsertWcBriefing } from "@/lib/db/queries";
 import { todayShanghai } from "@/lib/date";
 import { sendAlert } from "@/lib/alert";
 import { sendDailyPush } from "@/lib/telegram";
+import { buildWcBriefing, wcActive } from "@/lib/wc-pipeline";
+import type { WcBriefing } from "@/lib/wc-llm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // LLM batch can take a while
@@ -38,6 +40,21 @@ export async function GET(req: Request) {
     revalidatePath(`/daily/${date}`);
     revalidatePath("/archive");
 
+    // World Cup special — best-effort companion; a failure here must NEVER
+    // affect the main edition. Stops generating after the tournament (SUNSET).
+    let wc: WcBriefing | null = null;
+    if (wcActive(date)) {
+      try {
+        wc = await buildWcBriefing(date);
+        await upsertWcBriefing(wc);
+        revalidatePath("/worldcup");
+        revalidatePath(`/worldcup/${date}`);
+        console.log(`[cron] WC briefing ${date}: ${wc.angleKey} "${wc.headline}" $${wc.costUsd.toFixed(4)}`);
+      } catch (err) {
+        console.error(`[cron] WC briefing FAILED ${date} (main edition unaffected):`, err);
+      }
+    }
+
     // Best-effort daily broadcast (never blocks/fails the publish).
     // `?nopush=1` regenerates/publishes WITHOUT broadcasting — used for manual
     // mid-day re-runs so the public channel doesn't get a duplicate post. This
@@ -48,7 +65,11 @@ export async function GET(req: Request) {
     if (nopush) {
       console.log("[cron] telegram push: skipped (nopush flag)");
     } else {
-      const push = await sendDailyPush(issue, siteUrl);
+      const push = await sendDailyPush(
+        issue,
+        siteUrl,
+        wc ? { headline: wc.headline, url: `${siteUrl}/worldcup` } : undefined
+      );
       pushSent = push.sent;
       console.log(`[cron] telegram push: ${push.sent ? "sent" : `skipped (${push.reason})`}`);
     }
@@ -62,6 +83,7 @@ export async function GET(req: Request) {
       costUsd: Number(issue.costUsd.toFixed(4)),
       generatedAt: issue.generatedAt,
       pushed: pushSent,
+      worldCup: wc ? { angle: wc.angleKey, headline: wc.headline } : null,
     });
   } catch (err) {
     // HARD RULE: never fabricate or publish a broken edition. We simply did
