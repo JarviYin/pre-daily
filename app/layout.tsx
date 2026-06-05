@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { JsonLd } from "@/components/JsonLd";
 import { graph, orgNode, websiteNode } from "@/lib/seo";
 
@@ -55,6 +56,7 @@ export default function RootLayout({
       <body className="min-h-full">
         <JsonLd data={graph(orgNode(), websiteNode())} />
         {children}
+        <Analytics />
       </body>
     </html>
   );
