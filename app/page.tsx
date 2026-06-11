@@ -3,7 +3,7 @@ import { EditionView } from "@/components/EditionView";
 import { EmptyState } from "@/components/EmptyState";
 import { getLatestIssue, listIssueDates } from "@/lib/db/queries";
 import { formatCnDate } from "@/lib/date";
-import { getWcCard } from "@/lib/wc-card";
+import { getWcHero } from "@/lib/wc-card";
 
 // ISR: re-render at most every 5 min; cron also push-revalidates on publish.
 export const revalidate = 300;
@@ -50,7 +50,7 @@ export default async function Home() {
       prevDate={prevDate}
       nextDate={null}
       editionNumber={editionNumber}
-      wcCard={await getWcCard()}
+      wcHero={await getWcHero()}
     />
   );
 }

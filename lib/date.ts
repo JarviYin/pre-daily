@@ -39,6 +39,22 @@ export function formatTimestamp(iso: string): string {
     .replace(/-/g, "/");
 }
 
+/** Kickoff display in Asia/Shanghai, e.g. "6月12日 03:00". */
+export function formatCnKickoff(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: TZ,
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("month")}月${get("day")}日 ${get("hour")}:${get("minute")}`;
+}
+
 /** Hours since an ISO timestamp (for staleness checks). */
 export function hoursSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 3_600_000;

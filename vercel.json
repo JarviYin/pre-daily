@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/refresh",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/wc-push",
+      "schedule": "0 12 * * *"
     }
   ]
 }

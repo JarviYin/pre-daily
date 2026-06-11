@@ -2,9 +2,10 @@
 // day's editorial ANGLE (so the special never repeats and tracks the tournament
 // arc) and which teams to spotlight. The schedule-aware part: before kick-off we
 // rotate preview themes; during the tournament we lead with the day's actual
-// match markets when present, otherwise track the biggest odds movers.
+// fixtures (focus match first), otherwise track the biggest odds movers.
 
 import type { WcSnapshot, WcTeam } from "./worldcup";
+import { sameTeam, teamZh } from "./wc-names";
 
 export type WcPhase = "pre" | "group" | "knockout" | "final" | "after";
 
@@ -39,7 +40,7 @@ function dayIndex(date: string): number {
 
 const byName = (snap: WcSnapshot, ...names: string[]): WcTeam[] =>
   names
-    .map((n) => snap.teams.find((t) => t.team.toLowerCase() === n.toLowerCase()))
+    .map((n) => snap.teams.find((t) => sameTeam(t.team, n)))
     .filter((t): t is WcTeam => Boolean(t));
 
 // Pre-tournament rotating preview themes. Each picks its spotlight teams from
@@ -81,7 +82,7 @@ const PRE_THEMES: ((s: WcSnapshot) => Omit<WcAngle, "phase">)[] = [
     title: "东道主与新赛制：48 队首届的看点",
     instruction:
       "解读三个东道主（美国、加拿大、墨西哥）的赔率与主场预期，并说明 48 队新赛制对赛程和冷门概率的影响。",
-    focus: byName(s, "United States", "USA", "Mexico", "Canada").slice(0, 2),
+    focus: byName(s, "United States", "Mexico", "Canada").slice(0, 2),
   }),
   (s) => ({
     key: "divergence",
@@ -123,36 +124,41 @@ export function planAngle(date: string, snap: WcSnapshot): WcAngle {
     };
   }
 
-  // group / knockout — schedule-aware: lead with today's match markets if any.
-  const matchTeams = snap.matches
-    .flatMap((m) => m.title.split(/\s+vs\.?\s+/i))
-    .map((s) => s.replace(/[-–].*/, "").trim())
-    .map((name) => snap.teams.find((t) => t.team.toLowerCase() === name.toLowerCase()))
-    .filter((t): t is WcTeam => Boolean(t))
-    .slice(0, 3);
+  // group / knockout — schedule-aware: lead with the day's focus match.
+  const focus = snap.focusMatch?.fixture ?? null;
+  const matchday = snap.schedule.upcoming.length + snap.schedule.live.length > 0;
 
-  if (snap.matches.length > 0) {
+  if (matchday && focus) {
+    // Spotlight the focus fixture's two teams, by their championship odds.
+    const focusTeams = [focus.teamA, focus.teamB]
+      .map((name) => snap.teams.find((t) => sameTeam(t.team, name)))
+      .filter((t): t is WcTeam => Boolean(t));
     return {
       phase,
       key: phase === "group" ? "matchday" : "ko-tie",
+      // No "今日" prefix — the page already frames it as "今日角度 · …".
       title:
         phase === "group"
-          ? `今日焦点战：${snap.matches[0].title}`
-          : `淘汰赛前瞻：${snap.matches[0].title}`,
+          ? `焦点战：${teamZh(focus.teamA)} vs ${teamZh(focus.teamB)}`
+          : `淘汰赛焦点：${teamZh(focus.teamA)} vs ${teamZh(focus.teamB)}`,
       instruction:
-        "围绕今日的比赛做前瞻：分析对阵双方的特点与赛果市场倾向，并结合夺冠概率的变化说明这场比赛的分量。绝不编造尚未发生的比分或结果。",
-      focus: matchTeams.length ? matchTeams : snap.teams.slice(0, 2),
+        "今天是比赛日。先用一两句复盘已结束场次的市场结算结果（如有），然后围绕今日赛程展开：" +
+        "重点拆解焦点战——用胜/平/负盘与附加盘（总进球、双方进球等）的真实定价说明市场的预期与分歧，" +
+        "并结合两队夺冠概率的变化说明这场比赛的分量。绝不编造尚未发生的比分或结果。",
+      focus: focusTeams.length ? focusTeams : snap.teams.slice(0, 2),
     };
   }
 
-  // No match today → track the biggest odds movers (very informative mid-event).
+  // No fixture in the window → track the biggest odds movers (very informative
+  // mid-event) + the qualification picture.
   const movers = snap.topMovers.length ? snap.topMovers : snap.teams.slice(0, 3);
   return {
     phase,
     key: phase === "group" ? "group-standings" : "ko-bracket",
     title: phase === "group" ? "小组出线形势与资金异动" : "晋级路线图与冷门预警",
     instruction:
-      "结合最近 24 小时夺冠概率变动最大的球队，解读小组/淘汰赛的出线形势与资金流向；指出潜在冷门。仅基于赔率变动与公认实力，不编造比赛结果。",
+      "结合最近 24 小时夺冠概率变动最大的球队与各小组头名盘的定价，解读小组/淘汰赛的出线形势与资金流向；" +
+      "指出潜在冷门。仅基于赔率变动与公认实力，不编造比赛结果。",
     focus: movers.slice(0, 3),
   };
 }
