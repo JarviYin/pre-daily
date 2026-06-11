@@ -118,8 +118,15 @@ function pickFocusFixture(s: WcScheduleSnapshot): WcFixture | null {
   return candidates.reduce((a, b) => (b.vol24h > a.vol24h ? b : a));
 }
 
-/** Fetch + parse the full World Cup snapshot (winner odds + match layer). */
-export async function getWorldCup(): Promise<WcSnapshot> {
+export type WcWinnerBoard = {
+  totalVolume: number;
+  volume24hr: number;
+  commentCount: number;
+  teams: WcTeam[]; // sorted desc by probability
+};
+
+/** Just the Winner market board (cheap single-event fetch). */
+export async function getWinnerBoard(): Promise<WcWinnerBoard> {
   const data = await fetchJson(`${GAMMA}/events?slug=${WC_WINNER_SLUG}`);
   const ev = (Array.isArray(data) ? data[0] : data) as RawEvent | undefined;
   if (!ev) throw new Error("World Cup Winner event not found");
@@ -139,6 +146,17 @@ export async function getWorldCup(): Promise<WcSnapshot> {
     });
   }
   teams.sort((a, b) => b.prob - a.prob);
+  return {
+    totalVolume: toNum(ev.volume),
+    volume24hr: toNum(ev.volume24hr),
+    commentCount: ev.commentCount ?? 0,
+    teams,
+  };
+}
+
+/** Fetch + parse the full World Cup snapshot (winner odds + match layer). */
+export async function getWorldCup(): Promise<WcSnapshot> {
+  const { totalVolume, volume24hr, commentCount, teams } = await getWinnerBoard();
 
   const topMovers = teams
     .filter((t) => t.move24h != null && Math.abs(t.move24h) >= 0.005)
@@ -164,9 +182,9 @@ export async function getWorldCup(): Promise<WcSnapshot> {
 
   return {
     asOf: new Date().toISOString(),
-    totalVolume: toNum(ev.volume),
-    volume24hr: toNum(ev.volume24hr),
-    commentCount: ev.commentCount ?? 0,
+    totalVolume,
+    volume24hr,
+    commentCount,
     teams,
     topMovers,
     schedule,

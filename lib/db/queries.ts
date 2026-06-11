@@ -1,6 +1,6 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { getDb } from "./index";
-import { dailyIssues, issueItems, wcBriefings } from "./schema";
+import { dailyIssues, issueItems, wcBriefings, wcPushLog } from "./schema";
 import type { DailyIssue, DailyMarket } from "../types";
 import type { WcBriefing } from "../wc-llm";
 
@@ -222,6 +222,27 @@ export async function listWcBriefingHeads(): Promise<
     .select({ date: wcBriefings.date, title: wcBriefings.title, headline: wcBriefings.headline })
     .from(wcBriefings)
     .orderBy(desc(wcBriefings.date));
+}
+
+/** Which of these fixtures already got their pre-kickoff reminder. */
+export async function getRemindedSlugs(slugs: string[]): Promise<Set<string>> {
+  if (!slugs.length) return new Set();
+  const db = getDb();
+  const rows = await db
+    .select({ slug: wcPushLog.slug })
+    .from(wcPushLog)
+    .where(inArray(wcPushLog.slug, slugs));
+  return new Set(rows.map((r) => r.slug));
+}
+
+/** Record that a fixture's reminder went out (idempotent). */
+export async function markReminded(slugs: string[]): Promise<void> {
+  if (!slugs.length) return;
+  const db = getDb();
+  await db
+    .insert(wcPushLog)
+    .values(slugs.map((slug) => ({ slug, sentAt: new Date() })))
+    .onConflictDoNothing();
 }
 
 export async function listWcBriefingDates(): Promise<string[]> {

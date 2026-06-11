@@ -124,6 +124,35 @@ export async function sendDailyPush(
 }
 
 /**
+ * Pre-kickoff reminder: every match gets one ~2h before kickoff; fixtures
+ * sharing the same trigger window are combined into a single message so
+ * simultaneous group-stage kickoffs don't flood the channel.
+ */
+export async function sendWcReminderPush(input: {
+  items: { fixture: WcFixture; analysis: string | null }[];
+  siteUrl: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  if (!input.items.length) return { sent: false, reason: "no fixtures" };
+  const url = `${input.siteUrl.replace(/\/$/, "")}/worldcup`;
+
+  // No "约 X 小时" in the title — trigger drift makes any fixed lead time a
+  // lie; each block carries the exact kickoff instead.
+  const blocks = input.items.map(({ fixture: f, analysis }) => {
+    const kick = f.kickoff ? `北京时间 ${formatCnKickoff(f.kickoff)} 开球` : "即将开球";
+    const odds = `胜平负概率：${teamZh(f.teamA)}胜 ${formatPct(f.probA)} / 平局 ${formatPct(f.probDraw)} / ${teamZh(f.teamB)}胜 ${formatPct(f.probB)}`;
+    const head = `⚽ ${teamZh(f.teamA)} vs ${teamZh(f.teamB)}${f.group ? `（${f.group}组）` : ""} · ${kick}`;
+    return [head, odds, analysis ?? null].filter(Boolean).join("\n");
+  });
+
+  const text =
+    `⏰ 世界杯开赛提醒\n\n` +
+    blocks.join("\n\n") +
+    `\n\n实时概率与深度解读 → ${url}`;
+
+  return sendMessage(text);
+}
+
+/**
  * Evening matchday push: tonight's fixtures with fresh 1X2 odds + the focus
  * match breakdown from the day's briefing. The caller skips this entirely on
  * non-matchdays. Best-effort like the daily push.

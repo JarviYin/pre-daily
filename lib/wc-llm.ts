@@ -155,6 +155,72 @@ function groupsBlock(groups: WcGroupStanding[] | null): string {
     .join("\n");
 }
 
+// ── Pre-kickoff reminder analyses ───────────────────────────────────────────
+
+export type WcReminderInput = {
+  fixture: WcFixture;
+  props: WcFocusProp[];
+  champA: number | null; // the two teams' championship probabilities, if listed
+  champB: number | null;
+};
+
+const ReminderSchema = z.object({
+  analyses: z
+    .array(z.object({ slug: z.string().min(1), analysis: z.string().min(30).max(260) }))
+    .min(1),
+});
+
+/**
+ * Short pre-kickoff read for each due fixture (one LLM call for the batch).
+ * Same honesty rules as the daily briefing. Returns slug→analysis; missing
+ * slugs simply get no analysis (the reminder still goes out with odds only).
+ */
+export async function generateWcReminderAnalyses(
+  inputs: WcReminderInput[]
+): Promise<{ bySlug: Map<string, string>; usage: Usage; modelId: string }> {
+  const blocks = inputs
+    .map(({ fixture: f, props, champA, champB }) => {
+      const kick = f.kickoff ? `北京时间 ${formatCnKickoff(f.kickoff)}` : "时间待定";
+      const champ =
+        champA != null || champB != null
+          ? `\n  夺冠盘：${teamZh(f.teamA)} ${champA != null ? pct(champA) : "未上榜"}、${teamZh(f.teamB)} ${champB != null ? pct(champB) : "未上榜"}`
+          : "";
+      const propLines = props.length
+        ? `\n  附加盘：${props.map((p) => `${sanitize(p.label)} ${pct(p.prob)}`).join("；")}`
+        : "";
+      return `- slug=${f.slug}\n  ${teamZh(f.teamA)} vs ${teamZh(f.teamB)}${f.group ? `（${f.group}组）` : ""}，${kick}\n  赛果盘：${fmtOdds(f)}${champ}${propLines}`;
+    })
+    .join("\n");
+
+  const prompt =
+    `<market_data>\n即将开球的世界杯比赛：\n${blocks}\n</market_data>\n\n` +
+    `以上比赛即将开球。请为每场写一段开赛前瞻短评（60-160字）：` +
+    `用胜平负与附加盘的真实定价点出市场预期、这场球的看点或分歧；可结合两队公认的风格与历史，` +
+    `不编造阵容、伤病或未发生的结果。短评中不要提距开球的具体时长；` +
+    `百分比一律称「概率」，不要使用「赔率」「盘口」等字眼。` +
+    `输出 JSON：{"analyses":[{"slug":"…","analysis":"…"}]}，slug 原样返回。`;
+
+  const res = await client().chat.completions.create({
+    model: modelId(),
+    messages: [
+      { role: "system", content: SYS },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.6,
+    max_tokens: 380 * inputs.length + 200,
+  });
+
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  const parsed = ReminderSchema.parse(JSON.parse(raw));
+  const bySlug = new Map(parsed.analyses.map((a) => [a.slug, a.analysis]));
+  const usage: Usage = {
+    promptTokens: res.usage?.prompt_tokens ?? 0,
+    completionTokens: res.usage?.completion_tokens ?? 0,
+  };
+  return { bySlug, usage, modelId: modelId() };
+}
+
 export async function generateWcBriefing(
   date: string,
   angle: WcAngle,

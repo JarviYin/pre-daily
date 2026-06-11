@@ -84,6 +84,14 @@ export const wcBriefings = pgTable("wc_briefings", {
   costUsd: doublePrecision("cost_usd").notNull().default(0),
 });
 
+// Dedup ledger for per-match pre-kickoff reminders: one row per fixture slug
+// once its reminder has actually been broadcast. Keeps the externally
+// triggered remind endpoint exactly-once even when trigger timing drifts.
+export const wcPushLog = pgTable("wc_push_log", {
+  slug: text("slug").primaryKey(), // fixture event slug (fifwc-…)
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+});
+
 export type DailyIssueRow = typeof dailyIssues.$inferSelect;
 export type IssueItemRow = typeof issueItems.$inferSelect;
 export type WcBriefingRow = typeof wcBriefings.$inferSelect;
