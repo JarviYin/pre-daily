@@ -1,4 +1,5 @@
 import { getWorldCup } from "./worldcup";
+import { getWcSchedule, getWcGroups, attachGroups } from "./wc-schedule";
 import { planAngle, SUNSET } from "./wc-angles";
 import { generateWcBriefing, type WcBriefing } from "./wc-llm";
 import { estimateCost } from "./llm";
@@ -33,9 +34,35 @@ export async function buildWcBriefing(date: string): Promise<WcBriefing> {
     lede: content.lede,
     teamFocus,
     oddsSnapshot: snap.teams.slice(0, 10),
+    schedule: snap.schedule,
+    groups: snap.groups.length ? snap.groups : null,
+    focusMatch: snap.focusMatch
+      ? { ...snap.focusMatch, analysis: content.matchAnalysis }
+      : null,
     lookAhead: content.lookAhead,
     modelId,
     generatedAt: new Date().toISOString(),
     costUsd: estimateCost(usage),
   };
+}
+
+/**
+ * Refresh ONLY the data layers of an existing briefing (schedule, groups, and
+ * the focus fixture's odds) — no LLM call. Used by the evening matchday push
+ * so the site + push carry fresh odds without rewriting the day's narrative.
+ * Returns the updated briefing; throws if the schedule fetch fails.
+ */
+export async function refreshWcData(b: WcBriefing): Promise<WcBriefing> {
+  const [schedule, groups] = await Promise.all([getWcSchedule(), getWcGroups()]);
+  attachGroups([...schedule.upcoming, ...schedule.live, ...schedule.finished], groups);
+
+  let focusMatch = b.focusMatch;
+  if (focusMatch) {
+    const liveFixture = [...schedule.live, ...schedule.upcoming, ...schedule.finished].find(
+      (f) => f.slug === focusMatch!.fixture.slug
+    );
+    if (liveFixture) focusMatch = { ...focusMatch, fixture: liveFixture };
+  }
+
+  return { ...b, schedule, groups: groups.length ? groups : b.groups, focusMatch };
 }

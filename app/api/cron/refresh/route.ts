@@ -68,7 +68,14 @@ export async function GET(req: Request) {
       const push = await sendDailyPush(
         issue,
         siteUrl,
-        wc ? { headline: wc.headline, url: `${siteUrl}/worldcup` } : undefined
+        wc
+          ? {
+              headline: wc.headline,
+              url: `${siteUrl}/worldcup`,
+              finished: wc.schedule?.finished ?? [],
+              focus: wc.focusMatch?.fixture ?? null,
+            }
+          : undefined
       );
       pushSent = push.sent;
       console.log(`[cron] telegram push: ${push.sent ? "sent" : `skipped (${push.reason})`}`);

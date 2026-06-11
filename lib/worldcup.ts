@@ -1,9 +1,21 @@
 // World Cup data from Polymarket Gamma. The 2026 FIFA World Cup Winner market
 // is a single negRisk event — one sub-market per national team, where the
-// team's championship probability is its "Yes" price. We also best-effort pull
-// the day's match markets (only meaningful once the tournament is underway).
+// team's championship probability is its "Yes" price. Match-level data
+// (schedule, 1X2 odds, settled results, group standings, focus-match props)
+// comes from lib/wc-schedule.ts; this module assembles the full snapshot.
 //
 // This is the DATA layer only — the deep narrative is written by lib/wc-llm.ts.
+
+import {
+  getWcSchedule,
+  getWcGroups,
+  getFocusProps,
+  attachGroups,
+  type WcFixture,
+  type WcGroupStanding,
+  type WcFocusProp,
+  type WcScheduleSnapshot,
+} from "./wc-schedule";
 
 const GAMMA = "https://gamma-api.polymarket.com";
 export const WC_WINNER_SLUG = "world-cup-winner";
@@ -16,12 +28,9 @@ export type WcTeam = {
   volume: number; // total USD volume on that team's market
 };
 
-export type WcMatch = {
-  title: string;
-  slug: string;
-  endDate: string | null;
-  leader: string; // leading outcome label
-  leaderProb: number;
+export type WcFocusMatch = {
+  fixture: WcFixture;
+  props: WcFocusProp[]; // top extra markets (O/U, BTTS, …) on this fixture
 };
 
 export type WcSnapshot = {
@@ -31,7 +40,9 @@ export type WcSnapshot = {
   commentCount: number;
   teams: WcTeam[]; // sorted desc by probability
   topMovers: WcTeam[]; // sorted desc by |move24h| (meaningful moves only)
-  matches: WcMatch[]; // today's / upcoming match markets (best-effort, may be empty)
+  schedule: WcScheduleSnapshot; // recent results + live + upcoming fixtures
+  groups: WcGroupStanding[]; // group-winner odds per group (group stage)
+  focusMatch: WcFocusMatch | null; // today's highest-volume upcoming fixture
 };
 
 function toNum(v: unknown): number {
@@ -83,8 +94,6 @@ type RawMarket = {
   volumeNum?: number;
   active?: boolean;
   closed?: boolean;
-  slug?: string;
-  endDate?: string;
 };
 type RawEvent = {
   title?: string;
@@ -102,7 +111,14 @@ function teamYesProb(m: RawMarket): { prob: number; ok: boolean } {
   return { prob: prices[yi] ?? 0, ok: true };
 }
 
-/** Fetch + parse the World Cup Winner market into a team snapshot. */
+/** The day's focus match: highest 24h-volume upcoming (or live) fixture. */
+function pickFocusFixture(s: WcScheduleSnapshot): WcFixture | null {
+  const candidates = [...s.live, ...s.upcoming];
+  if (!candidates.length) return null;
+  return candidates.reduce((a, b) => (b.vol24h > a.vol24h ? b : a));
+}
+
+/** Fetch + parse the full World Cup snapshot (winner odds + match layer). */
 export async function getWorldCup(): Promise<WcSnapshot> {
   const data = await fetchJson(`${GAMMA}/events?slug=${WC_WINNER_SLUG}`);
   const ev = (Array.isArray(data) ? data[0] : data) as RawEvent | undefined;
@@ -129,11 +145,21 @@ export async function getWorldCup(): Promise<WcSnapshot> {
     .sort((a, b) => Math.abs(b.move24h!) - Math.abs(a.move24h!))
     .slice(0, 6);
 
-  let matches: WcMatch[] = [];
+  // Match layer — each part best-effort so a partial Gamma hiccup never
+  // takes down the whole snapshot (the winner board alone is still a brief).
+  let schedule: WcScheduleSnapshot = { asOf: new Date().toISOString(), upcoming: [], live: [], finished: [] };
+  let groups: WcGroupStanding[] = [];
   try {
-    matches = await getTodayMatches();
-  } catch {
-    /* best-effort */
+    [schedule, groups] = await Promise.all([getWcSchedule(), getWcGroups()]);
+    attachGroups([...schedule.upcoming, ...schedule.live, ...schedule.finished], groups);
+  } catch (err) {
+    console.warn("[worldcup] match layer unavailable:", err);
+  }
+
+  let focusMatch: WcFocusMatch | null = null;
+  const focusFixture = pickFocusFixture(schedule);
+  if (focusFixture) {
+    focusMatch = { fixture: focusFixture, props: await getFocusProps(focusFixture.slug) };
   }
 
   return {
@@ -143,53 +169,8 @@ export async function getWorldCup(): Promise<WcSnapshot> {
     commentCount: ev.commentCount ?? 0,
     teams,
     topMovers,
-    matches,
+    schedule,
+    groups,
+    focusMatch,
   };
-}
-
-/**
- * Best-effort: find today's/imminent World Cup MATCH markets (e.g. "Spain vs
- * Brazil"). Only meaningful once the tournament starts; returns [] otherwise.
- * Soccer match events are tagged Soccer + World Cup and titled "X vs. Y".
- */
-export async function getTodayMatches(): Promise<WcMatch[]> {
-  const url =
-    `${GAMMA}/events?active=true&closed=false&order=volume24hr&ascending=false&limit=100`;
-  const data = await fetchJson(url);
-  if (!Array.isArray(data)) return [];
-  const now = Date.now();
-  const out: WcMatch[] = [];
-  for (const e of data as (RawEvent & { slug?: string; endDate?: string; tags?: { label?: string }[] })[]) {
-    const title = (e.title || "").trim();
-    const tags = (e.tags || []).map((t) => (t.label || "").toLowerCase()).join(" ");
-    const isWcMatch =
-      /\bvs\.?\b/i.test(title) && /world cup|fifa/.test(tags + " " + title.toLowerCase());
-    if (!isWcMatch) continue;
-    // within the next ~36h
-    const end = e.endDate ? Date.parse(e.endDate) : NaN;
-    if (Number.isFinite(end) && (end < now - 6 * 3600e3 || end > now + 36 * 3600e3)) continue;
-    const m = (e.markets || [])[0];
-    let leader = "",
-      leaderProb = 0;
-    if (m) {
-      const names = parseJsonArray(m.outcomes).map(String);
-      const prices = parseJsonArray(m.outcomePrices).map(toNum);
-      let bi = -1;
-      prices.forEach((p, i) => {
-        if (p > leaderProb) {
-          leaderProb = p;
-          bi = i;
-        }
-      });
-      leader = bi >= 0 ? names[bi] ?? "" : "";
-    }
-    out.push({
-      title,
-      slug: (e as { slug?: string }).slug ?? "",
-      endDate: e.endDate ?? null,
-      leader,
-      leaderProb,
-    });
-  }
-  return out.slice(0, 8);
 }

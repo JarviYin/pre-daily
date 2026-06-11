@@ -17,7 +17,8 @@ import type {
   Badge,
 } from "../types";
 import type { WcTeam } from "../worldcup";
-import type { WcTeamFocus } from "../wc-llm";
+import type { WcTeamFocus, WcFocusMatchBrief } from "../wc-llm";
+import type { WcScheduleSnapshot, WcGroupStanding } from "../wc-schedule";
 
 // One published daily edition.
 export const dailyIssues = pgTable("daily_issues", {
@@ -73,6 +74,10 @@ export const wcBriefings = pgTable("wc_briefings", {
   lede: text("lede").notNull(), // deep narrative
   teamFocus: jsonb("team_focus").$type<WcTeamFocus[]>().notNull(),
   oddsSnapshot: jsonb("odds_snapshot").$type<WcTeam[]>().notNull(), // top teams for display
+  // Match layer (added for the matchday upgrade; nullable ⇒ old rows fine).
+  schedule: jsonb("schedule").$type<WcScheduleSnapshot | null>(),
+  groupStandings: jsonb("group_standings").$type<WcGroupStanding[] | null>(),
+  focusMatch: jsonb("focus_match").$type<WcFocusMatchBrief | null>(),
   lookAhead: text("look_ahead").notNull(),
   modelId: text("model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),

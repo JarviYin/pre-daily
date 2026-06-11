@@ -8,6 +8,7 @@ import { Footer } from "./Footer";
 import { JsonLd } from "./JsonLd";
 import { graph, newsArticleNode, breadcrumbNode } from "@/lib/seo";
 import { WorldCupCard } from "./WorldCupCard";
+import { WorldCupHero, type WcHeroData } from "./WorldCupHero";
 
 export type WcCardData = { headline: string; leaderTeam?: string; leaderProb?: number };
 
@@ -62,12 +63,15 @@ export function EditionView({
   nextDate,
   editionNumber,
   wcCard,
+  wcHero,
 }: {
   issue: DailyIssue;
   prevDate?: string | null;
   nextDate?: string | null;
   editionNumber?: number;
   wcCard?: WcCardData | null;
+  /** Tournament-time homepage top section; takes precedence over wcCard. */
+  wcHero?: WcHeroData | null;
 }) {
   const hero = issue.markets.find((m) => m.role === "hero") ?? null;
   // Every v2.1 edition has a hero (the pipeline guarantees one). So NO hero ⇒
@@ -89,10 +93,11 @@ export function EditionView({
         generatedAt={issue.generatedAt}
         editionNumber={editionNumber}
       />
+      {wcHero && <WorldCupHero data={wcHero} />}
       <DateNav prevDate={prevDate} nextDate={nextDate} />
       <DailySummary summary={issue.summary} />
 
-      {wcCard && (
+      {!wcHero && wcCard && (
         <section className="mt-6">
           <WorldCupCard
             headline={wcCard.headline}
