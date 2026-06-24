@@ -100,18 +100,26 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
   }
   kept.forEach((m, i) => (m.rank = i + 1));
 
-  // 3. Cross-market editorial summary over the kept set (movers-first framing).
-  const { summary, usage: summaryUsage } = await summarizeDay(kept.map(toAnalyzeInput));
+  // 3. Cross-market editorial over the kept set: 异动主线 + 资金信号 + 资产联动.
+  const { result: brief, usage: summaryUsage } = await summarizeDay(kept.map(toAnalyzeInput));
 
-  if (!summary || summary.trim().length === 0) {
+  if (!brief.summary || brief.summary.trim().length === 0) {
     throw new PipelineError("Empty daily summary; aborting publish.");
   }
 
   const costUsd = estimateCost(analyzeUsage) + estimateCost(summaryUsage);
 
+  // Enhancement fields may degrade to "" (see SummarySchema.catch); store null
+  // rather than an all-empty object so readers can cleanly gate on `briefing`.
+  const briefing =
+    brief.moneyFlow || brief.assetLink
+      ? { moneyFlow: brief.moneyFlow, assetLink: brief.assetLink }
+      : null;
+
   return {
     date,
-    summary,
+    summary: brief.summary,
+    briefing,
     modelId: analysisModelId(),
     summaryModelId: summaryModelId(),
     generatedAt: new Date().toISOString(),

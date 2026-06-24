@@ -15,6 +15,7 @@ import type {
   Category,
   EditionRole,
   Badge,
+  DailyBriefing,
 } from "../types";
 import type { WcTeam } from "../worldcup";
 import type { WcTeamFocus, WcFocusMatchBrief } from "../wc-llm";
@@ -24,6 +25,8 @@ import type { WcScheduleSnapshot, WcGroupStanding } from "../wc-schedule";
 export const dailyIssues = pgTable("daily_issues", {
   date: text("date").primaryKey(), // YYYY-MM-DD (Asia/Shanghai)
   summary: text("summary").notNull(),
+  // Investment read (资金信号 + 资产联动); nullable ⇒ pre-existing rows fine.
+  briefing: jsonb("briefing").$type<DailyBriefing | null>(),
   modelId: text("model_id").notNull(), // model used for per-market analysis
   summaryModelId: text("summary_model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
@@ -82,14 +85,6 @@ export const wcBriefings = pgTable("wc_briefings", {
   modelId: text("model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
   costUsd: doublePrecision("cost_usd").notNull().default(0),
-});
-
-// Dedup ledger for per-match pre-kickoff reminders: one row per fixture slug
-// once its reminder has actually been broadcast. Keeps the externally
-// triggered remind endpoint exactly-once even when trigger timing drifts.
-export const wcPushLog = pgTable("wc_push_log", {
-  slug: text("slug").primaryKey(), // fixture event slug (fifwc-…)
-  sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
 });
 
 export type DailyIssueRow = typeof dailyIssues.$inferSelect;

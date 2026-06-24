@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { DailyIssue, DailyMarket } from "@/lib/types";
 import { Masthead } from "./Masthead";
 import { DailySummary } from "./DailySummary";
+import { InvestmentBrief } from "./InvestmentBrief";
+import { CatalystCalendar } from "./CatalystCalendar";
 import { HeroMover } from "./HeroMover";
 import { MarketCard } from "./MarketCard";
 import { Footer } from "./Footer";
@@ -96,6 +98,9 @@ export function EditionView({
       {wcHero && <WorldCupHero data={wcHero} />}
       <DateNav prevDate={prevDate} nextDate={nextDate} />
       <DailySummary summary={issue.summary} />
+
+      {issue.briefing && <InvestmentBrief briefing={issue.briefing} />}
+      <CatalystCalendar markets={issue.markets} />
 
       {!wcHero && wcCard && (
         <section className="mt-6">

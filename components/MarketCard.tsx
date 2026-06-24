@@ -101,6 +101,12 @@ export function MarketCard({
               <span className="font-medium text-bull">信号 </span>
               <span className="text-muted">{analysis.signal}</span>
             </p>
+            {analysis.trade && (
+              <p className="text-[13px] leading-relaxed">
+                <span className="font-medium text-bull">交易视角 </span>
+                <span className="text-muted">{analysis.trade}</span>
+              </p>
+            )}
             <p className="text-[12px] leading-relaxed text-faint">
               可信度 · {analysis.risk}
             </p>

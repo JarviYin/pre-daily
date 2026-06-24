@@ -20,10 +20,15 @@ async function main() {
       `cost≈$${issue.costUsd.toFixed(4)}`
   );
   console.log(`\nSummary:\n${issue.summary}\n`);
+  if (issue.briefing) {
+    console.log(`资金信号: ${issue.briefing.moneyFlow}`);
+    console.log(`资产联动: ${issue.briefing.assetLink}\n`);
+  }
   for (const m of issue.markets) {
     console.log(`#${m.rank} [${m.category}] ${m.title}`);
     console.log(`   insight: ${m.analysis?.insight}`);
     console.log(`   signal : ${m.analysis?.signal}`);
+    console.log(`   trade  : ${m.analysis?.trade}`);
     console.log(`   risk   : ${m.analysis?.risk}`);
   }
   process.exit(0);

@@ -73,6 +73,7 @@ export async function GET(req: Request) {
               headline: wc.headline,
               url: `${siteUrl}/worldcup`,
               finished: wc.schedule?.finished ?? [],
+              upcoming: wc.schedule?.upcoming ?? [],
               focus: wc.focusMatch?.fixture ?? null,
             }
           : undefined

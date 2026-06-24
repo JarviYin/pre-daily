@@ -3,19 +3,16 @@ import { revalidatePath } from "next/cache";
 import { getWcBriefing, getLatestWcBriefing, upsertWcBriefing } from "@/lib/db/queries";
 import { todayShanghai } from "@/lib/date";
 import { refreshWcData, wcActive } from "@/lib/wc-pipeline";
-import { sendWcMatchdayPush } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-// Evening World Cup cron (vercel.json: 12:00 UTC = 20:00 北京时间), the second
-// of the two Hobby-plan cron slots. Two jobs, NO LLM call:
-//   1. refresh the day's briefing DATA layers (schedule / 1X2 odds / groups)
-//      so the site shows evening-fresh numbers, then revalidate;
-//   2. broadcast tonight's matchday guide to the Telegram channel — skipped
-//      automatically when no fixture is in the window (non-matchday) and
-//      after the tournament SUNSET.
-// Same auth as /api/cron/refresh; `?nopush=1` refreshes data without pushing.
+// Evening World Cup cron (vercel.json: 12:00 UTC = 20:00 北京时间). Data-only,
+// NO Telegram push: World Cup is now folded into the single morning edition
+// broadcast (/api/cron/refresh) — this job just refreshes the day's briefing
+// DATA layers (schedule / 1X2 odds / groups) so the SITE shows evening-fresh
+// numbers, then revalidates. No-ops after the tournament SUNSET.
+// Same auth as /api/cron/refresh.
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -49,32 +46,12 @@ export async function GET(req: Request) {
       `[wc-push] data refreshed ${updated.date}: ${sched.upcoming.length} upcoming, ${sched.live.length} live, ${sched.finished.length} finished`
     );
 
-    const nopush = new URL(req.url).searchParams.get("nopush") === "1";
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com";
-    let pushSent = false;
-    let pushReason: string | undefined;
-    if (nopush) {
-      pushReason = "nopush flag";
-    } else {
-      const push = await sendWcMatchdayPush({
-        date,
-        schedule: sched,
-        focus: updated.focusMatch,
-        siteUrl,
-      });
-      pushSent = push.sent;
-      pushReason = push.reason;
-    }
-    console.log(`[wc-push] telegram: ${pushSent ? "sent" : `skipped (${pushReason})`}`);
-
     return NextResponse.json({
       refreshed: true,
       date: updated.date,
       upcoming: sched.upcoming.length,
       live: sched.live.length,
       finished: sched.finished.length,
-      pushed: pushSent,
-      pushReason: pushSent ? undefined : pushReason,
     });
   } catch (err) {
     // Evening job is an enhancement — fail quietly (log, 500) without alert
