@@ -4,7 +4,7 @@ import { config } from "dotenv";
 config();
 
 import { getIssue } from "../lib/db/queries";
-import { todayShanghai, isValidDate } from "../lib/date";
+import { todayShanghai } from "../lib/date";
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -26,8 +26,13 @@ async function main() {
   check("≥6 markets published", ms.length >= 6, `${ms.length}`);
 
   // Gate 2: ANTI-TEMPLATE — all analyses present & pairwise distinct
-  const allHaveAnalysis = ms.every((m) => m.analysis?.insight && m.analysis?.signal && m.analysis?.risk);
+  const allHaveAnalysis = ms.every(
+    (m) => m.analysis?.insight && m.analysis?.signal && m.analysis?.risk
+  );
   check("every market has full analysis", allHaveAnalysis);
+  // 交易视角 is best-effort (optional in the schema): flag only on poor coverage.
+  const tradeCov = ms.filter((m) => m.analysis?.trade).length;
+  check("交易视角 coverage ≥80%", tradeCov >= Math.ceil(ms.length * 0.8), `${tradeCov}/${ms.length}`);
   const insights = ms.map((m) => m.analysis?.insight ?? "");
   const signals = ms.map((m) => m.analysis?.signal ?? "");
   check(
@@ -68,6 +73,13 @@ async function main() {
   // Gate 7: honest model attribution (no OpenAI claim unless actually used)
   check("model id recorded", Boolean(issue.modelId), issue.modelId);
   check("summary present & non-template", issue.summary.length > 20);
+
+  // Gate 7b: investment read present (资金信号 + 资产联动).
+  check(
+    "daily briefing present (资金信号+资产联动)",
+    Boolean(issue.briefing?.moneyFlow?.trim() && issue.briefing?.assetLink?.trim()),
+    issue.briefing ? `moneyFlow=${issue.briefing.moneyFlow.length}字 assetLink=${issue.briefing.assetLink.length}字` : "缺失"
+  );
 
   // ── v2.1 heat / curation gates ──────────────────────────────────────────
   // Gate 8: curation — no sports market survived (mechanical churn excluded).
