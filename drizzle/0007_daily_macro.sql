@@ -1,0 +1,1 @@
+ALTER TABLE "daily_issues" ADD COLUMN "macro" jsonb;

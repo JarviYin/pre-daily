@@ -43,6 +43,20 @@
       "when": 1781199202403,
       "tag": "0005_wc_push_log",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782272441501,
+      "tag": "0006_daily_briefing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782959274824,
+      "tag": "0007_daily_macro",
+      "breakpoints": true
     }
   ]
 }

@@ -15,12 +15,16 @@ export type Category = (typeof CATEGORIES)[number];
 export type Outcome = {
   option: string; // e.g. "25 bps decrease" or a candidate name
   probability: number; // 0..1
+  // 24h delta of THIS outcome in the same normalized space as `probability`.
+  // Optional/nullable ⇒ pre-existing rows (and the folded "其他" line) lack it.
+  change?: number | null;
 };
 
 // What the LLM returns per market — grounded, honest, no fabricated facts.
 export type MarketAnalysis = {
   insight: string; // 一句解读：市场此刻在 price-in 什么
   signal: string; // 信号含义：对什么资产/事件偏多/偏空
+  trade?: string; // 交易视角：当前定价偏贵/偏便宜/合理，顺势/逆向/观望 + 风险回报（新增，历史行可能缺）
   risk: string; // 可信度 / 风险提示（流动性、解析标准、临近截止等）
 };
 
@@ -64,15 +68,69 @@ export type DailyMarket = {
   analysis: MarketAnalysis | null;
 };
 
+// Cross-market investment read that expands the daily edition beyond the
+// movers line. Optional/nullable ⇒ pre-existing editions render without it.
+export type DailyBriefing = {
+  moneyFlow: string; // 资金信号：高确信异动 vs 薄量噪声 vs 分歧/背离
+  assetLink: string; // 资产联动：今日预测市场动向 → 对外部资产(利率/美元/加密/股指/大宗)的含义
+};
+
+// ── 宏观视角 (macro depth section) ──────────────────────────────────────────
+// `chips` and `calendar` are DETERMINISTIC (fetched from official/public data
+// sources, pre-formatted for display); the three text fields are LLM-written
+// and each degrades to "" independently. The whole section is nullable so a
+// data outage can never block publishing.
+
+// One pre-formatted external-market indicator, e.g. {美债10Y, 4.48%}.
+export type MacroChip = {
+  label: string; // e.g. "美债10Y" / "BTC" / "VIX"
+  value: string; // pre-formatted, e.g. "4.48%" / "$60,050"
+  delta?: string; // pre-formatted change, e.g. "+2.3%" / "+31bp"
+  tone?: "up" | "down" | "flat"; // colours the delta
+};
+
+// One upcoming macro event (next ~7 days), with market expectations when known.
+export type MacroCalendarItem = {
+  date: string; // ISO datetime (ForexFactory, has time) or YYYY-MM-DD (Fed)
+  label: string; // zh label, e.g. "非农新增就业"; falls back to source title
+  impact: "high" | "medium";
+  forecast?: string; // market expectation, e.g. "114K"
+  previous?: string; // prior print, e.g. "172K"
+  source: "forexfactory" | "fed";
+};
+
+export type DailyMacro = {
+  chips: MacroChip[]; // external market snapshot (deterministic)
+  calendar: MacroCalendarItem[]; // week-ahead macro calendar (deterministic)
+  view: string; // 宏观定价：宏观类市场赔率 × 真实行情的交叉解读
+  divergence: string; // 分歧信号：预测市场 vs 传统市场/共识的最大反差
+  watch: string; // 一周前瞻：日历上的催化与「若…则…」观察点
+};
+
 // One published daily edition (maps to daily_issues row + its items).
 export type DailyIssue = {
   date: string; // YYYY-MM-DD (publication date, Asia/Shanghai)
-  summary: string; // 今日 3 个最值得注意的信号（真实跨市场综合）
+  summary: string; // 今日异动主线（真实跨市场综合）
+  briefing: DailyBriefing | null; // 投资视角扩展（资金信号 + 资产联动），可空
+  macro: DailyMacro | null; // 宏观视角（外部行情+日历+LLM解读），可空
   modelId: string; // model actually used for per-market analysis
   summaryModelId: string; // model used for the cross-market summary
   generatedAt: string; // ISO timestamp of successful generation
   costUsd: number; // total LLM cost for this edition
   markets: DailyMarket[];
+};
+
+// One time-sensitive resolution surfaced by the catalyst calendar. Derived
+// deterministically from an edition's markets — never persisted, never LLM.
+export type CatalystEntry = {
+  title: string;
+  category: Category;
+  sourceUrl: string;
+  endDate: string; // ISO; resolution deadline
+  daysLeft: number; // whole days from today (Asia/Shanghai) to resolution
+  leadOption: string; // current leading outcome
+  leadProb: number; // its probability (0..1)
+  move24h: number | null; // headline 24h move, for "动向" context
 };
 
 export type LiquidityTier = "high" | "medium" | "low";
