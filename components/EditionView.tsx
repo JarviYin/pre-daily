@@ -3,6 +3,7 @@ import type { DailyIssue, DailyMarket } from "@/lib/types";
 import { Masthead } from "./Masthead";
 import { DailySummary } from "./DailySummary";
 import { InvestmentBrief } from "./InvestmentBrief";
+import { MacroView } from "./MacroView";
 import { CatalystCalendar } from "./CatalystCalendar";
 import { HeroMover } from "./HeroMover";
 import { MarketCard } from "./MarketCard";
@@ -100,6 +101,7 @@ export function EditionView({
       <DailySummary summary={issue.summary} />
 
       {issue.briefing && <InvestmentBrief briefing={issue.briefing} />}
+      {issue.macro && <MacroView macro={issue.macro} />}
       <CatalystCalendar markets={issue.markets} />
 
       {!wcHero && wcCard && (

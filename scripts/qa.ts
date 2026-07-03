@@ -81,6 +81,21 @@ async function main() {
     issue.briefing ? `moneyFlow=${issue.briefing.moneyFlow.length}字 assetLink=${issue.briefing.assetLink.length}字` : "缺失"
   );
 
+  // Gate 7c: 宏观视角 present — snapshot chips + at least the macro read.
+  // (Data-source outages degrade fields individually; a fully missing section
+  //  means the whole macro path silently died and deserves a failing gate.)
+  check(
+    "宏观视角 present (快照+宏观定价)",
+    Boolean(issue.macro && issue.macro.chips.length >= 3 && issue.macro.view?.trim()),
+    issue.macro
+      ? `chips=${issue.macro.chips.length} view=${issue.macro.view.length}字 calendar=${issue.macro.calendar.length}条`
+      : "缺失"
+  );
+
+  // Gate 7d: finance quota — ≥2 macro/crypto markets in every edition.
+  const financeCnt = ms.filter((m) => m.category === "macro" || m.category === "crypto").length;
+  check("≥2 宏观/金融类市场 (finance quota)", financeCnt >= 2, `${financeCnt}`);
+
   // ── v2.1 heat / curation gates ──────────────────────────────────────────
   // Gate 8: curation — no sports market survived (mechanical churn excluded).
   const sports = ms.filter((m) => m.category === "sports");

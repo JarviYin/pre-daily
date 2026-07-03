@@ -14,6 +14,7 @@ export async function upsertIssue(issue: DailyIssue): Promise<void> {
         date: issue.date,
         summary: issue.summary,
         briefing: issue.briefing,
+        macro: issue.macro,
         modelId: issue.modelId,
         summaryModelId: issue.summaryModelId,
         generatedAt: new Date(issue.generatedAt),
@@ -24,6 +25,7 @@ export async function upsertIssue(issue: DailyIssue): Promise<void> {
         set: {
           summary: issue.summary,
           briefing: issue.briefing,
+          macro: issue.macro,
           modelId: issue.modelId,
           summaryModelId: issue.summaryModelId,
           generatedAt: new Date(issue.generatedAt),
@@ -97,6 +99,7 @@ function rowsToIssue(
     date: head.date,
     summary: head.summary,
     briefing: head.briefing ?? null,
+    macro: head.macro ?? null,
     modelId: head.modelId,
     summaryModelId: head.summaryModelId,
     generatedAt: head.generatedAt.toISOString(),

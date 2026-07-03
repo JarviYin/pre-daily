@@ -133,6 +133,25 @@ export async function sendDailyPush(
     if (issue.briefing.assetLink) briefBlock += `🔗 资产联动：\n${issue.briefing.assetLink}\n\n`;
   }
 
+  // 宏观视角 — a CORE-chip one-liner (all 10 sources in one line reads like a
+  // wall on mobile) + 宏观定价 + 一周前瞻 (the highest-value read in a push).
+  // The full section (三段 + 日历) lives on the web.
+  let macroBlock = "";
+  if (issue.macro) {
+    const CORE_CHIPS = ["美债10Y", "联储目标", "标普500", "BTC", "VIX", "加密恐贪"];
+    const chipLine = issue.macro.chips
+      .filter((c) => CORE_CHIPS.includes(c.label))
+      .slice(0, 5)
+      .map((c) => `${c.label} ${c.value}${c.delta ? ` (${c.delta})` : ""}`)
+      .join(" · ");
+    const parts = [
+      chipLine,
+      issue.macro.view,
+      issue.macro.watch ? `🔭 前瞻：${issue.macro.watch}` : "",
+    ].filter((s) => s && s.trim().length > 0);
+    if (parts.length) macroBlock = `🌍 宏观视角：\n${parts.join("\n")}\n\n`;
+  }
+
   let wcBlock = "";
   if (worldCup) {
     const lines = [`🏆 世界杯：${worldCup.headline}`];
@@ -157,10 +176,12 @@ export async function sendDailyPush(
     `📊 预测市场中文早报 · ${formatCnDate(issue.date)}\n\n` +
     `${issue.summary}\n\n` +
     briefBlock +
+    macroBlock +
     (movers ? `📈 今日异动：\n${movers}\n\n` : "") +
     catalystBlock(issue) +
     wcBlock +
-    `全文（前 ${issue.markets.length} 市场 + 中文解读）→ ${permalink}`;
+    `全文（前 ${issue.markets.length} 市场 + 中文解读）→ ${permalink}\n` +
+    `以上为公开数据的信息解读，不构成投资建议`;
 
   return sendMessage(text);
 }

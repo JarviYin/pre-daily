@@ -22,6 +22,13 @@ import type { Badge, Category, EditionRole, Outcome } from "./types";
 
 const GAMMA_BASE = "https://gamma-api.polymarket.com";
 const FETCH_LIMIT = 150; // over-fetch by 24h volume, then curate + heat-rank down
+// Supplemental pull so macro/finance candidates exist even on低成交 days when
+// they would miss the top-150-by-24h-volume pool. Slug verified live 2026-07.
+const FINANCE_TAG = "economy";
+const FINANCE_FETCH_LIMIT = 50;
+// Editorial guarantee: the digest always carries some macro/finance coverage
+// (product decision 2026-07); quota slots are filled by heat among these cats.
+const FINANCE_MIN = 2;
 const MAX_OUTCOMES = 6; // top outcomes shown; remainder folded into "其他"
 const MAX_PER_CATEGORY = 3; // editorial: stop one topic monopolising the board
 const SETTLED_THRESHOLD = 0.985; // leading prob ≥ this ⇒ basically decided
@@ -132,10 +139,11 @@ async function fetchWithRetry(url: string, tries = 3): Promise<unknown> {
   throw lastErr instanceof Error ? lastErr : new Error("Gamma fetch failed");
 }
 
-async function fetchTopEvents(limit: number): Promise<RawEvent[]> {
+async function fetchTopEvents(limit: number, tagSlug?: string): Promise<RawEvent[]> {
   const url =
     `${GAMMA_BASE}/events?active=true&closed=false` +
-    `&order=volume24hr&ascending=false&limit=${limit}`;
+    `&order=volume24hr&ascending=false&limit=${limit}` +
+    (tagSlug ? `&tag_slug=${tagSlug}` : "");
   const data = await fetchWithRetry(url);
   return Array.isArray(data) ? (data as RawEvent[]) : [];
 }
@@ -248,9 +256,12 @@ function buildOutcomes(ev: RawEvent): {
     headline && Math.abs(headline.change) >= 0.005 ? headline.change : null;
   const headlineOption = move24h != null ? headline!.option : null;
 
+  // Carry each outcome's own 24h delta — the LLM reads the DIRECTION of money
+  // (who gained at whose expense), not just the headline scalar.
   let outcomes: Outcome[] = raw.map((o) => ({
     option: o.option,
     probability: o.probability,
+    change: o.change,
   }));
 
   if (outcomes.length > MAX_OUTCOMES) {
@@ -426,6 +437,21 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
     movers[0] ?? [...eligible].sort((a, b) => b.heatScore - a.heatScore)[0];
   if (hero) take(hero, "hero");
 
+  // 1b) Finance quota — the digest must always carry macro/finance coverage,
+  //     even when politics/geopolitics dominates the movers. Best candidates
+  //     by heat among those categories claim their slots before the open pool.
+  const FINANCE_CATS: ReadonlySet<Category> = new Set(["macro", "crypto"]);
+  const financePool = eligible
+    .filter((m) => FINANCE_CATS.has(m.category))
+    .sort((a, b) => b.heatScore - a.heatScore);
+  let financeCount = chosen.filter((m) => FINANCE_CATS.has(m.category)).length;
+  for (const m of financePool) {
+    if (financeCount >= FINANCE_MIN) break;
+    if (isDuplicate(m)) continue;
+    take(m, "heat");
+    financeCount++;
+  }
+
   // 2) Anchors — evergreen context: top by TOTAL volume, not already chosen.
   const anchorPool = eligible
     .filter((m) => !isDuplicate(m))
@@ -436,10 +462,10 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
   // 3) Heat list fills the middle, category-capped + topic-deduped, leaving
   //    room for anchors. Reserved anchors are skipped here so they can't be
   //    consumed by the heat loop (which would shrink the anchor section).
-  const heatBudget = Math.max(topN - chosen.length - anchorPool.length, 0);
+  const heatTarget = Math.max(topN - anchorPool.length, 0);
   const ranked = [...eligible].sort((a, b) => b.heatScore - a.heatScore);
   for (const m of ranked) {
-    if (chosen.length - (hero ? 1 : 0) >= heatBudget) break;
+    if (chosen.length >= heatTarget) break;
     if (isDuplicate(m) || anchorIds.has(m.marketId)) continue;
     if ((catCount[m.category] ?? 0) >= MAX_PER_CATEGORY) continue;
     take(m, "heat");
@@ -463,14 +489,34 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
   }
 
   for (const m of chosen) m.badges = badgesFor(m, now);
-  return chosen.slice(0, topN);
+  // Display invariant (and QA gate): the heat list reads in descending heat
+  // order. Quota picks and top-ups enter out of order — re-sort the heat slice
+  // while keeping hero first and anchors last.
+  const ordered = [
+    ...chosen.filter((m) => m.role === "hero"),
+    ...chosen.filter((m) => m.role === "heat").sort((a, b) => b.heatScore - a.heatScore),
+    ...chosen.filter((m) => m.role === "anchor"),
+  ];
+  return ordered.slice(0, topN);
 }
 
-/** End-to-end: fetch → parse → curate → heat-rank → compose edition. */
+/** End-to-end: fetch (main + finance tag) → parse → curate → heat-rank → compose. */
 export async function getEditionMarkets(topN: number): Promise<RawCuratedMarket[]> {
   const now = Date.now();
-  const events = await fetchTopEvents(FETCH_LIMIT);
-  const parsed = events
+  // The finance pull is best-effort: its failure must not kill the edition.
+  const [events, financeEvents] = await Promise.all([
+    fetchTopEvents(FETCH_LIMIT),
+    fetchTopEvents(FINANCE_FETCH_LIMIT, FINANCE_TAG).catch((err) => {
+      console.warn("[gamma] finance tag fetch failed (continuing without):", err);
+      return [] as RawEvent[];
+    }),
+  ]);
+  const seen = new Set(events.map((e) => String(e.id ?? e.slug)));
+  const merged = [
+    ...events,
+    ...financeEvents.filter((e) => !seen.has(String(e.id ?? e.slug))),
+  ];
+  const parsed = merged
     .map((e) => eventToMarket(e, now))
     .filter((m): m is RawCuratedMarket => m !== null && m.title.length > 0);
   return selectEdition(parsed, topN);

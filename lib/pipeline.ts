@@ -7,7 +7,14 @@ import {
   summaryModelId,
   type AnalyzeInput,
 } from "./llm";
-import type { DailyIssue, DailyMarket } from "./types";
+import {
+  getMacroSnapshot,
+  getMacroCalendar,
+  buildMacroChips,
+  macroFactsForPrompt,
+  type MacroSnapshot,
+} from "./macro";
+import type { DailyIssue, DailyMarket, MacroCalendarItem } from "./types";
 
 const TOP_N = Number(process.env.TOP_N_MARKETS ?? 10);
 const MIN_MARKETS = 6; // never publish a thin/broken edition
@@ -20,6 +27,20 @@ export class PipelineError extends Error {}
  * keeps yesterday's edition rather than fabricating or shipping a broken one.
  */
 export async function generateIssue(date: string): Promise<DailyIssue> {
+  // 0. External macro context (snapshot + calendar) — kicked off first so it
+  //    runs in parallel with market fetch + analyses. Strictly best-effort:
+  //    any failure degrades to null/[] and must never block publishing.
+  const macroPromise = Promise.all([
+    getMacroSnapshot().catch((err): MacroSnapshot | null => {
+      console.warn("[pipeline] macro snapshot failed (section degrades):", err);
+      return null;
+    }),
+    getMacroCalendar().catch((err): MacroCalendarItem[] => {
+      console.warn("[pipeline] macro calendar failed (section degrades):", err);
+      return [];
+    }),
+  ]);
+
   // 1. Live, curated, heat-ranked markets (hero → heat → anchors), in order.
   const raw = await getEditionMarkets(TOP_N);
   if (raw.length < MIN_MARKETS) {
@@ -38,6 +59,7 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     endDate: m.endDate,
     leadingChange: m.leadingChange,
     move24h: m.move24h,
+    headlineOption: m.headlineOption,
     surge: m.surge,
     isNew: m.isNew,
     outcomes: m.outcomes,
@@ -100,8 +122,14 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
   }
   kept.forEach((m, i) => (m.rank = i + 1));
 
-  // 3. Cross-market editorial over the kept set: 异动主线 + 资金信号 + 资产联动.
-  const { result: brief, usage: summaryUsage } = await summarizeDay(kept.map(toAnalyzeInput));
+  // 3. Cross-market editorial over the kept set (WITH per-market analyses and
+  //    the real external snapshot): 主线 + 资金信号 + 资产联动 + 宏观视角.
+  const [snapshot, calendar] = await macroPromise;
+  const macroFacts = macroFactsForPrompt(snapshot, calendar);
+  const { result: brief, usage: summaryUsage } = await summarizeDay(
+    kept.map((m) => ({ ...toAnalyzeInput(m), analysis: m.analysis })),
+    macroFacts
+  );
 
   if (!brief.summary || brief.summary.trim().length === 0) {
     throw new PipelineError("Empty daily summary; aborting publish.");
@@ -116,10 +144,24 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
       ? { moneyFlow: brief.moneyFlow, assetLink: brief.assetLink }
       : null;
 
+  // 宏观视角: deterministic chips/calendar + LLM texts; null when EVERYTHING
+  // is empty so readers can cleanly gate on `macro` (same contract as briefing).
+  // HARD gate (not just prompt guidance): a macro text without its underlying
+  // data block is unpublishable — force it empty even if the LLM wrote one.
+  const chips = snapshot ? buildMacroChips(snapshot) : [];
+  const view = snapshot ? brief.macroView : "";
+  const divergence = snapshot ? brief.macroDivergence : "";
+  const watch = calendar.length ? brief.macroWatch : "";
+  const macro =
+    chips.length || calendar.length
+      ? { chips, calendar, view, divergence, watch }
+      : null;
+
   return {
     date,
     summary: brief.summary,
     briefing,
+    macro,
     modelId: analysisModelId(),
     summaryModelId: summaryModelId(),
     generatedAt: new Date().toISOString(),

@@ -16,6 +16,7 @@ import type {
   EditionRole,
   Badge,
   DailyBriefing,
+  DailyMacro,
 } from "../types";
 import type { WcTeam } from "../worldcup";
 import type { WcTeamFocus, WcFocusMatchBrief } from "../wc-llm";
@@ -27,6 +28,8 @@ export const dailyIssues = pgTable("daily_issues", {
   summary: text("summary").notNull(),
   // Investment read (资金信号 + 资产联动); nullable ⇒ pre-existing rows fine.
   briefing: jsonb("briefing").$type<DailyBriefing | null>(),
+  // 宏观视角 (external snapshot + calendar + LLM macro read); nullable ⇒ old rows fine.
+  macro: jsonb("macro").$type<DailyMacro | null>(),
   modelId: text("model_id").notNull(), // model used for per-market analysis
   summaryModelId: text("summary_model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
