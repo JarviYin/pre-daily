@@ -107,16 +107,23 @@ async function main() {
   check("exactly one hero", heroes.length === 1, `${heroes.length}`);
   check("≤2 anchors", anchors.length <= 2, `${anchors.length}`);
 
-  // Gate 10: hero is genuinely the biggest 24h mover — but on a quiet day
-  // (no market clears the ~3pt hero floor) selectEdition picks the highest
-  // heatScore instead, so the gate must mirror that fallback.
+  // Gate 10: hero is genuinely the biggest 24h mover among CREDIBLE markets
+  // (mirrors lib/gamma.ts hero gates: move + liquidity + volume floors) — on a
+  // quiet day selectEdition falls back to the highest heatScore instead.
   const HERO_MIN_MOVE = 0.03;
+  const HERO_MIN_LIQ = 100_000;
+  const HERO_MIN_VOL24 = 50_000;
   if (heroes.length === 1) {
+    // Mover comparison pool mirrors gamma's hero gates (credible movers only);
+    // the quiet-day fallback pool mirrors gamma's UNGATED `eligible` set.
     const nonAnchor = ms.filter((m) => m.role !== "anchor");
-    const maxMove = Math.max(...nonAnchor.map((m) => Math.abs(m.move24h ?? 0)), 0);
+    const credible = nonAnchor.filter(
+      (m) => m.liquidity >= HERO_MIN_LIQ && m.volume24hr >= HERO_MIN_VOL24
+    );
+    const maxMove = Math.max(...credible.map((m) => Math.abs(m.move24h ?? 0)), 0);
     if (maxMove >= HERO_MIN_MOVE) {
       const heroMove = Math.abs(heroes[0].move24h ?? heroes[0].leadingChange ?? 0);
-      check("hero has the largest |24h move|", heroMove >= maxMove - 1e-9, `hero=${(heroMove * 100).toFixed(1)}pt max=${(maxMove * 100).toFixed(1)}pt`);
+      check("hero has the largest credible |24h move|", heroMove >= maxMove - 1e-9, `hero=${(heroMove * 100).toFixed(1)}pt max=${(maxMove * 100).toFixed(1)}pt`);
     } else {
       const maxHeat = Math.max(...nonAnchor.map((m) => m.heatScore), 0);
       check("quiet day: hero has the largest heatScore", heroes[0].heatScore >= maxHeat - 1e-9, `hero=${heroes[0].heatScore.toFixed(2)} max=${maxHeat.toFixed(2)}`);
