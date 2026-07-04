@@ -35,6 +35,12 @@ const SETTLED_THRESHOLD = 0.985; // leading prob ≥ this ⇒ basically decided
 const LIQ_FLOOR = 25_000; // credibility gate: ignore thin/manipulable pools
 const NEW_DAYS = 4; // created within this many days ⇒ "新晋"
 const HERO_MIN_MOVE = 0.03; // a hero needs at least a 3pt 24h swing
+// The hero HEADLINES the edition — a thin market's big move is usually one
+// wallet pushing an empty book, not news. Thin movers stay in the heat list
+// (where the analysis self-discounts them) but can't take the headline.
+// Mirrored in scripts/qa.ts gate 10 — keep in sync.
+const HERO_MIN_LIQ = 100_000;
+const HERO_MIN_VOL24 = 50_000;
 const ANCHOR_COUNT = 2; // evergreen high-volume markets kept for context
 const MOVE_FULL = 0.15; // a 15pt 24h swing scores full marks on the move term
 const SURGE_CAP = 8; // cap volume-acceleration so new markets don't saturate
@@ -428,10 +434,16 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
   const isDuplicate = (m: RawCuratedMarket) =>
     used.has(m.marketId) || usedTopics.has(topicKey(m.title));
 
-  // 1) Hero — biggest absolute 24h move (with a meaningful floor). Quiet day:
-  //    fall back to the single highest heat score.
+  // 1) Hero — biggest absolute 24h move among CREDIBLE markets (liquidity +
+  //    real volume floors). Quiet day: fall back to the highest heat score.
   const movers = eligible
-    .filter((m) => m.move24h != null && Math.abs(m.move24h) >= HERO_MIN_MOVE)
+    .filter(
+      (m) =>
+        m.move24h != null &&
+        Math.abs(m.move24h) >= HERO_MIN_MOVE &&
+        m.liquidity >= HERO_MIN_LIQ &&
+        m.volume24hr >= HERO_MIN_VOL24
+    )
     .sort((a, b) => Math.abs(b.move24h!) - Math.abs(a.move24h!));
   const hero =
     movers[0] ?? [...eligible].sort((a, b) => b.heatScore - a.heatScore)[0];

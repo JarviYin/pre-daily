@@ -27,7 +27,18 @@ const UA = "Mozilla/5.0 (compatible; pre-daily/1.0; +https://www.pre-daily.com)"
 export type FredQuote = { value: number; changePct: number | null; asOf: string };
 
 export type MacroSnapshot = {
-  treasury: { y2: number; y10: number; spreadBp: number; asOf: string } | null;
+  treasury: {
+    y2: number;
+    y10: number;
+    spreadBp: number;
+    // Day-over-day change per leg (bp) + the deterministic curve read
+    // (牛陡/熊陡/…). Derived in CODE, not by the LLM: a slope LEVEL alone
+    // under-determines the story and made the editorial flip-flop day to day.
+    d2Bp: number | null;
+    d10Bp: number | null;
+    curveRead: string | null;
+    asOf: string;
+  } | null;
   fed: { targetLo: number; targetHi: number; effr: number | null; asOf: string } | null;
   btc: { price: number; change24hPct: number } | null;
   eth: { price: number; change24hPct: number } | null;
@@ -85,11 +96,46 @@ function sanitizeCal(s: string): string {
 
 // ── individual snapshot fetchers ─────────────────────────────
 
-/** Latest 2Y/10Y from the Treasury's official daily par yield curve CSV. */
+/**
+ * Deterministic curve-shape read from the two legs' daily changes (bp).
+ * Standard convention: bull = yields falling, bear = rising; steepener /
+ * flattener by the slope change. Sub-2bp wiggles are called out as noise so
+ * the editorial never over-reads a quiet day.
+ */
+function readCurve(d2: number, d10: number): string {
+  const dSlope = d10 - d2;
+  if (Math.abs(d2) < 2 && Math.abs(d10) < 2) return "单日变动微小，无明确形态";
+  // Opposite legs of comparable size = a twist, not a clean regime — naming
+  // either leg "dominant" would fabricate causality.
+  if (d2 * d10 < 0 && Math.abs(Math.abs(d2) - Math.abs(d10)) <= 1) {
+    return "扭转（短端与长端反向拉锯，信号混杂）";
+  }
+  // The dominant leg is the LARGER absolute mover; the regime label is only
+  // used when that leg's direction matches the canonical pattern.
+  const shortDominant = Math.abs(d2) >= Math.abs(d10);
+  if (dSlope > 1.5) {
+    if (shortDominant && d2 < 0) return "牛陡（短端下行主导，降息预期升温）";
+    if (!shortDominant && d10 > 0) return "熊陡（长端上行主导，期限溢价/供给因素）";
+    return "陡峭化（两端反向拉锯，主导方向不明）";
+  }
+  if (dSlope < -1.5) {
+    if (!shortDominant && d10 < 0) return "牛平（长端下行主导，避险/久期买盘）";
+    if (shortDominant && d2 > 0) return "熊平（短端上行主导，紧缩定价）";
+    return "平坦化（两端反向拉锯，主导方向不明）";
+  }
+  if (d2 < 0 && d10 < 0) return "平行下移（整体做多债券）";
+  if (d2 > 0 && d10 > 0) return "平行上移（整体抛售债券）";
+  return "单日变动微小，无明确形态";
+}
+
+/** Latest 2Y/10Y + day-over-day deltas from the Treasury's official CSV. */
 async function fetchTreasury(): Promise<MacroSnapshot["treasury"]> {
   const year = new Date().getUTCFullYear();
-  // Early January: the new year's file can be empty — fall back one year.
+  // Collect rows across current year (+ previous year early in January) so we
+  // always have the two most recent trading days for the delta.
+  const rows: { ts: number; y2: number; y10: number; date: string }[] = [];
   for (const y of [year, year - 1]) {
+    if (rows.length >= 2) break;
     const url =
       `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/` +
       `${y}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${y}&_format=csv`;
@@ -101,27 +147,30 @@ async function fetchTreasury(): Promise<MacroSnapshot["treasury"]> {
     const i2 = header.indexOf("2 Yr");
     const i10 = header.indexOf("10 Yr");
     if (iDate < 0 || i2 < 0 || i10 < 0) continue;
-    // Rows are not guaranteed newest-first — pick the max date defensively.
-    let best: { ts: number; y2: number; y10: number; date: string } | null = null;
     for (const line of lines.slice(1)) {
       const cols = line.split(",").map((c) => c.replace(/"/g, "").trim());
       const ts = Date.parse(cols[iDate]);
       const y2 = parseFloat(cols[i2]);
       const y10 = parseFloat(cols[i10]);
       if (!Number.isFinite(ts) || !Number.isFinite(y2) || !Number.isFinite(y10)) continue;
-      if (!best || ts > best.ts) best = { ts, y2, y10, date: cols[iDate] };
-    }
-    if (best) {
-      const [m, d, yy] = best.date.split("/");
-      return {
-        y2: best.y2,
-        y10: best.y10,
-        spreadBp: Math.round((best.y10 - best.y2) * 100),
-        asOf: `${yy}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`,
-      };
+      rows.push({ ts, y2, y10, date: cols[iDate] });
     }
   }
-  return null;
+  if (rows.length === 0) return null;
+  rows.sort((a, b) => b.ts - a.ts);
+  const [latest, prev] = rows;
+  const [m, d, yy] = latest.date.split("/");
+  const d2Bp = prev ? Math.round((latest.y2 - prev.y2) * 100) : null;
+  const d10Bp = prev ? Math.round((latest.y10 - prev.y10) * 100) : null;
+  return {
+    y2: latest.y2,
+    y10: latest.y10,
+    spreadBp: Math.round((latest.y10 - latest.y2) * 100),
+    d2Bp,
+    d10Bp,
+    curveRead: d2Bp != null && d10Bp != null ? readCurve(d2Bp, d10Bp) : null,
+    asOf: `${yy}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`,
+  };
 }
 
 /** EFFR + current fed funds target range from the NY Fed's official API. */
@@ -483,9 +532,15 @@ export function macroFactsForPrompt(
 ): MacroFacts | null {
   const lines: string[] = [];
   if (s?.treasury) {
+    const t = s.treasury;
+    const delta =
+      t.d2Bp != null && t.d10Bp != null
+        ? `；日变动 2Y ${t.d2Bp >= 0 ? "+" : ""}${t.d2Bp}bp、10Y ${t.d10Bp >= 0 ? "+" : ""}${t.d10Bp}bp` +
+          (t.curveRead ? `；曲线形态：${t.curveRead}` : "")
+        : "";
     lines.push(
-      `- 美债收益率：2Y ${s.treasury.y2.toFixed(2)}%、10Y ${s.treasury.y10.toFixed(2)}%、` +
-        `2s10s利差 ${s.treasury.spreadBp >= 0 ? "+" : ""}${s.treasury.spreadBp}bp（美国财政部官方，截至 ${s.treasury.asOf}）`
+      `- 美债收益率：2Y ${t.y2.toFixed(2)}%、10Y ${t.y10.toFixed(2)}%、` +
+        `2s10s利差 ${t.spreadBp >= 0 ? "+" : ""}${t.spreadBp}bp${delta}（美国财政部官方，截至 ${t.asOf}）`
     );
   }
   if (s?.fed) {
