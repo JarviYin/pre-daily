@@ -2,19 +2,29 @@ import { getEditionMarkets } from "./gamma";
 import {
   analyzeAll,
   summarizeDay,
+  recapDay,
   estimateCost,
   analysisModelId,
   summaryModelId,
   type AnalyzeInput,
+  type RecapMarketLine,
 } from "./llm";
 import {
   getMacroSnapshot,
   getMacroCalendar,
   buildMacroChips,
   macroFactsForPrompt,
+  macroBriefForAnalysis,
   type MacroSnapshot,
 } from "./macro";
-import type { DailyIssue, DailyMarket, MacroCalendarItem } from "./types";
+import { getIssue } from "./db/queries";
+import type {
+  DailyIssue,
+  DailyMarket,
+  DailyNarrative,
+  DailyRecap,
+  MacroCalendarItem,
+} from "./types";
 
 const TOP_N = Number(process.env.TOP_N_MARKETS ?? 10);
 const MIN_MARKETS = 6; // never publish a thin/broken edition
@@ -49,6 +59,13 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     );
   }
 
+  // 1b. Macro data is needed BEFORE the per-market analyses (they get a
+  //     compact macro context to anchor "why today"). It has been fetching in
+  //     parallel with the market pull, so this await is usually near-instant.
+  const [snapshot, calendar] = await macroPromise;
+  const macroFacts = macroFactsForPrompt(snapshot, calendar);
+  const macroCtx = macroBriefForAnalysis(snapshot, calendar);
+
   // Both RawCuratedMarket and DailyMarket satisfy this structural shape.
   const toAnalyzeInput = (m: AnalyzeInput): AnalyzeInput => ({
     title: m.title,
@@ -65,8 +82,12 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     outcomes: m.outcomes,
   });
 
-  // 2. Real per-market analysis (bounded concurrency).
-  const { analyses, usage: analyzeUsage } = await analyzeAll(raw.map(toAnalyzeInput));
+  // 2. Real per-market analysis (bounded concurrency, with macro context).
+  const { analyses, usage: analyzeUsage } = await analyzeAll(
+    raw.map(toAnalyzeInput),
+    4,
+    macroCtx
+  );
 
   // Keep only fully-analysed markets; honesty > coverage. Display order from
   // selectEdition (hero first, anchors last) is preserved.
@@ -123,9 +144,7 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
   kept.forEach((m, i) => (m.rank = i + 1));
 
   // 3. Cross-market editorial over the kept set (WITH per-market analyses and
-  //    the real external snapshot): 主线 + 资金信号 + 资产联动 + 宏观视角.
-  const [snapshot, calendar] = await macroPromise;
-  const macroFacts = macroFactsForPrompt(snapshot, calendar);
+  //    the real external snapshot): 论点线 + 主线 + 资金信号 + 资产联动 + 宏观视角.
   const { result: brief, usage: summaryUsage } = await summarizeDay(
     kept.map((m) => ({ ...toAnalyzeInput(m), analysis: m.analysis })),
     macroFacts
@@ -143,6 +162,21 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     brief.moneyFlow || brief.assetLink
       ? { moneyFlow: brief.moneyFlow, assetLink: brief.assetLink }
       : null;
+
+  // 论点线: thesis 为整刊核心（渲染层以它替代 summary 卡）。thesis/pillars 全空
+  // ⇒ null，页面回退到传统 summary 卡布局——升级不破坏旧刊与模型降级。
+  const narrative: DailyNarrative | null =
+    brief.thesis || brief.pillars.length > 0
+      ? {
+          thesis: brief.thesis,
+          pillars: brief.pillars,
+          counterView: brief.counterView,
+          watch: brief.watch,
+        }
+      : null;
+
+  // 4. 昨日判断复盘 — best-effort: 失败/无昨日刊 ⇒ null，绝不阻塞发布。
+  const recap = await buildRecap(date, kept);
 
   // 宏观视角: deterministic chips/calendar + LLM texts; null when EVERYTHING
   // is empty so readers can cleanly gate on `macro` (same contract as briefing).
@@ -162,10 +196,76 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     summary: brief.summary,
     briefing,
     macro,
+    narrative,
+    recap,
     modelId: analysisModelId(),
     summaryModelId: summaryModelId(),
     generatedAt: new Date().toISOString(),
     costUsd,
     markets: kept,
   };
+}
+
+/** 前一天（Asia/Shanghai 日历日，无夏令时），格式 YYYY-MM-DD。 */
+function prevShanghaiDate(date: string): string | null {
+  const d = new Date(`${date}T00:00:00+08:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function toRecapLine(m: DailyMarket): RecapMarketLine {
+  const lead = m.outcomes[0];
+  return {
+    title: m.title,
+    slug: m.slug,
+    leadOption: lead?.option ?? "—",
+    leadProb: lead?.probability ?? 0,
+    move24h: m.move24h ?? m.leadingChange,
+  };
+}
+
+/**
+ * 昨日判断复盘。只对比同一市场（slug）今日仍在数据中的情况；复盘 LLM 失败、
+ * 无昨日刊、或没有足够数据 ⇒ 返回 null（页面隐藏该块）。
+ */
+async function buildRecap(
+  date: string,
+  today: DailyMarket[]
+): Promise<DailyRecap | null> {
+  const prevDate = prevShanghaiDate(date);
+  if (!prevDate) return null;
+
+  let prev: DailyIssue | null = null;
+  try {
+    prev = await getIssue(prevDate);
+  } catch (err) {
+    console.warn("[pipeline] recap: prev issue unavailable:", err);
+    return null;
+  }
+  if (!prev || prev.date === date) return null;
+
+  try {
+    const { result } = await recapDay({
+      prevDate: prev.date,
+      prevSummary: prev.summary,
+      prevThesis: prev.narrative?.thesis ?? "",
+      prevMarkets: prev.markets.map(toRecapLine),
+      todayMarkets: today.map(toRecapLine),
+    });
+    return {
+      prevDate: prev.date,
+      verdict: result.verdict,
+      summary: result.summary,
+      detail: result.detail,
+    };
+  } catch (err) {
+    console.warn("[pipeline] recap LLM failed (skipping recap):", err);
+    return null;
+  }
 }

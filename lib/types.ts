@@ -107,12 +107,42 @@ export type DailyMacro = {
   watch: string; // 一周前瞻：日历上的催化与「若…则…」观察点
 };
 
+// ── 论点线（narrative）────────────────────────────────────────────
+// 一刊从"10 个独立分析"升级为"一个论点 + 论据 + 反方 + 明日观察"。
+// 全部为 LLM 生成；thesis 为核心（空 ⇒ 整段为 null，渲染回退 summary 卡）；
+// 其余字段可独立降级为空/空数组，渲染层隐藏对应块。
+export type DailyPillar = {
+  claim: string; // 论据主张（一句话）
+  evidence: string; // 支撑证据：必须引用具体市场 + 数字（QA 校验含数字）
+  soWhat: string; // 所以呢：对读者的含义
+};
+
+export type DailyNarrative = {
+  thesis: string; // 今日论点（一句话，可作整刊标题）
+  pillars: DailyPillar[]; // 2-4 个论据块
+  counterView: string; // 反方/分歧：什么信号会推翻今日判断
+  watch: string; // 明日观察：看什么数据/事件/赔率验证或证伪
+};
+
+// ── 昨日判断复盘（recap）──────────────────────────────────────────
+// 昨天说 X，今天市场给了什么答案。best-effort：无昨日刊或复盘失败 ⇒ null。
+export type RecapVerdict = "hit" | "miss" | "pending"; // 兑现 / 证伪 / 未定
+
+export type DailyRecap = {
+  prevDate: string; // 被复盘的昨日刊日期
+  verdict: RecapVerdict;
+  summary: string; // 一句结论
+  detail: string; // 依据（点名市场与数字）
+};
+
 // One published daily edition (maps to daily_issues row + its items).
 export type DailyIssue = {
   date: string; // YYYY-MM-DD (publication date, Asia/Shanghai)
   summary: string; // 今日异动主线（真实跨市场综合）
   briefing: DailyBriefing | null; // 投资视角扩展（资金信号 + 资产联动），可空
   macro: DailyMacro | null; // 宏观视角（外部行情+日历+LLM解读），可空
+  narrative: DailyNarrative | null; // 论点线（thesis+论据+反方+明日观察），可空 ⇒ 回退 summary 卡
+  recap: DailyRecap | null; // 昨日判断复盘，可空
   modelId: string; // model actually used for per-market analysis
   summaryModelId: string; // model used for the cross-market summary
   generatedAt: string; // ISO timestamp of successful generation

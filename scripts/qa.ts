@@ -144,6 +144,32 @@ async function main() {
   });
   check("badges consistent with metrics", badgeViolations.length === 0, badgeViolations.map((m) => m.title).join("; "));
 
+  // ── v3 narrative / recap gates ─────────────────────────────────────────
+  // Gate 13: 论点线 — thesis 为整刊核心；论据块必须互不相同且引用具体数字。
+  const n = issue.narrative;
+  if (n) {
+    check("narrative thesis non-empty", n.thesis.trim().length > 0, `${n.thesis.length}字`);
+    check("narrative pillars ≥2", n.pillars.length >= 2, `${n.pillars.length}`);
+    const evCited = n.pillars.every((p) => /\d/.test(p.evidence));
+    check("pillars evidence cites numbers", evCited);
+    const distinctClaims = new Set(n.pillars.map((p) => p.claim)).size;
+    check("pillar claims pairwise distinct", distinctClaims === n.pillars.length, `${distinctClaims}/${n.pillars.length}`);
+    check("narrative counterView non-empty", n.counterView.trim().length > 0, `${n.counterView.length}字`);
+    check("narrative watch non-empty", n.watch.trim().length > 0, `${n.watch.length}字`);
+  } else {
+    check("narrative present (论点线)", false, "缺失——本刊将以 summary 卡回退渲染");
+  }
+
+  // Gate 14: 昨日复盘 — 存在时 verdict 合法、结论非空；缺失不阻塞（无昨日刊）。
+  const r = issue.recap;
+  if (r) {
+    check("recap verdict valid", ["hit", "miss", "pending"].includes(r.verdict), r.verdict);
+    check("recap summary non-empty", r.summary.trim().length > 0, `${r.summary.length}字`);
+    check("recap cites prev date", Boolean(r.prevDate), r.prevDate);
+  } else {
+    console.log("⚠ recap 缺失（无昨日刊或复盘失败）——不阻塞发布");
+  }
+
   console.log(`\n${failures === 0 ? "✅ ALL GATES PASSED" : `❌ ${failures} GATE(S) FAILED`}`);
   process.exit(failures === 0 ? 0 : 1);
 }

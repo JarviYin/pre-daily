@@ -17,6 +17,8 @@ import type {
   Badge,
   DailyBriefing,
   DailyMacro,
+  DailyNarrative,
+  DailyRecap,
 } from "../types";
 import type { WcTeam } from "../worldcup";
 import type { WcTeamFocus, WcFocusMatchBrief } from "../wc-llm";
@@ -30,6 +32,10 @@ export const dailyIssues = pgTable("daily_issues", {
   briefing: jsonb("briefing").$type<DailyBriefing | null>(),
   // 宏观视角 (external snapshot + calendar + LLM macro read); nullable ⇒ old rows fine.
   macro: jsonb("macro").$type<DailyMacro | null>(),
+  // 论点线 (thesis + pillars + counter + watch); nullable ⇒ pre-narrative rows render the summary card.
+  narrative: jsonb("narrative").$type<DailyNarrative | null>(),
+  // 昨日判断复盘 (verdict + evidence); nullable ⇒ no prev issue or recap failed.
+  recap: jsonb("recap").$type<DailyRecap | null>(),
   modelId: text("model_id").notNull(), // model used for per-market analysis
   summaryModelId: text("summary_model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),

@@ -20,6 +20,17 @@ async function main() {
       `cost≈$${issue.costUsd.toFixed(4)}`
   );
   console.log(`\nSummary:\n${issue.summary}\n`);
+  if (issue.narrative) {
+    console.log(`今日论点: ${issue.narrative.thesis}`);
+    for (const [i, p] of issue.narrative.pillars.entries()) {
+      console.log(`  论据${i + 1}: ${p.claim} — ${p.evidence}${p.soWhat ? `（所以: ${p.soWhat}）` : ""}`);
+    }
+    if (issue.narrative.counterView) console.log(`反方: ${issue.narrative.counterView}`);
+    if (issue.narrative.watch) console.log(`明日观察: ${issue.narrative.watch}`);
+  }
+  if (issue.recap) {
+    console.log(`\n昨日复盘: [${issue.recap.verdict}] ${issue.recap.summary} — ${issue.recap.detail}`);
+  }
   if (issue.briefing) {
     console.log(`资金信号: ${issue.briefing.moneyFlow}`);
     console.log(`资产联动: ${issue.briefing.assetLink}\n`);

@@ -578,3 +578,48 @@ export function macroFactsForPrompt(
     hasCalendar: calLines.length > 0,
   };
 }
+
+/**
+ * 精简宏观上下文，注入给【单市场分析师】（区别于给主编的 macroFactsForPrompt）：
+ * 一行式行情 chips + 未来 5 天高影响日历。让单市场 insight 从"孤立快照"变成
+ * "当下判断"（"异动发生在非农前夜" vs "异动无日历催化"是两种不同的信号）。
+ * 数据缺失 ⇒ null（分析师无上下文可引用，prompt 不出现该区块）。
+ */
+export function macroBriefForAnalysis(
+  s: MacroSnapshot | null,
+  calendar: MacroCalendarItem[]
+): string | null {
+  const parts: string[] = [];
+
+  if (s) {
+    const chips = buildMacroChips(s);
+    if (chips.length) {
+      parts.push(
+        chips
+          .map((c) => `${c.label} ${c.value}${c.delta ? `(${c.delta})` : ""}`)
+          .join("｜")
+      );
+    }
+  }
+
+  const now = Date.now();
+  const horizon = now + 5 * 86_400_000;
+  const soon = calendar.filter((c) => {
+    const t = Date.parse(c.date);
+    return Number.isFinite(t) && t >= now - 12 * 3_600_000 && t <= horizon;
+  });
+  if (soon.length) {
+    parts.push(
+      soon
+        .map(
+          (c) =>
+            `${shanghaiLabel(c.date)} ${c.label}${
+              c.impact === "high" ? "(高影响)" : ""
+            }${c.forecast ? ` 预期${c.forecast}` : ""}${c.previous ? ` 前值${c.previous}` : ""}`
+        )
+        .join("；")
+    );
+  }
+
+  return parts.length ? parts.join("\n") : null;
+}

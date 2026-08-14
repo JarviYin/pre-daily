@@ -91,6 +91,8 @@ export async function GET(req: Request) {
       costUsd: Number(issue.costUsd.toFixed(4)),
       generatedAt: issue.generatedAt,
       pushed: pushSent,
+      narrative: issue.narrative ? { thesis: issue.narrative.thesis } : null,
+      recap: issue.recap ? issue.recap.verdict : null,
       worldCup: wc ? { angle: wc.angleKey, headline: wc.headline } : null,
     });
   } catch (err) {
