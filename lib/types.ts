@@ -150,6 +150,41 @@ export type DailyIssue = {
   markets: DailyMarket[];
 };
 
+// ── SEO 循环（每日自动）───────────────────────────────────────────
+// 主题页 = 面向搜索长尾词的聚合落地页（如「美联储降息概率预测」）。
+// 每日循环：最新刊市场 → 映射主题 → LLM 刷新文案 → 聚合历史相关市场 →
+// 索引通知 → 测量 → 日报 → 反馈下一轮。
+
+export type SeoTopic = {
+  slug: string; // 固定主题键，如 "federal-reserve"
+  zhTitle: string; // 主题中文名，如「美联储利率路径预测」
+  metaTitle: string; // <title>（每日刷新，含今日数据）
+  metaDescription: string; // meta description
+  h1: string; // 页面 H1
+  intro: string; // 导语（含今日最新概率与历史追踪量）
+  keywords: string[]; // 匹配关键词（小写 token）
+  marketSlugs: string[]; // 历史累积的相关市场 slug（去重）
+  firstSeen: string; // YYYY-MM-DD 首次生成
+  lastUpdated: string; // YYYY-MM-DD 最后刷新刊期
+  generatedAt: string; // ISO 最后生成时间
+};
+
+export type SeoQueryStat = { query: string; impressions: number; clicks: number };
+
+// 每日 SEO 循环报告（测量 + 反馈），date 为主键。
+export type SeoReport = {
+  date: string; // YYYY-MM-DD (Asia/Shanghai)
+  topicsRefreshed: number; // 今日刷新主题数
+  newTopics: number; // 今日新建档主题数
+  urlsPinged: string[]; // 今日索引通知的 URL
+  impressions: number | null; // GSC 昨日曝光（未配置 ⇒ null）
+  clicks: number | null; // GSC 昨日点击
+  topQueries: SeoQueryStat[] | null; // GSC 昨日 top 查询
+  opportunities: string[]; // 未覆盖高曝光查询（loop 反馈：候选新主题）
+  reportText: string; // Telegram 日报全文
+  createdAt: string; // ISO
+};
+
 // One time-sensitive resolution surfaced by the catalyst calendar. Derived
 // deterministically from an edition's markets — never persisted, never LLM.
 export type CatalystEntry = {

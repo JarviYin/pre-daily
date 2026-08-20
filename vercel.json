@@ -6,6 +6,10 @@
       "schedule": "0 0 * * *"
     },
     {
+      "path": "/api/cron/seo",
+      "schedule": "30 0 * * *"
+    },
+    {
       "path": "/api/cron/wc-push",
       "schedule": "0 12 * * *"
     }

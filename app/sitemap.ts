@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { listIssueDates, listWcBriefingDates } from "@/lib/db/queries";
+import { listAllSeoTopicSlugs } from "@/lib/db/seo-queries";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com";
 
@@ -8,6 +9,7 @@ export const revalidate = 3600;
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let dates: string[] = [];
   let wcDates: string[] = [];
+  let topics: Awaited<ReturnType<typeof listAllSeoTopicSlugs>> = [];
   try {
     dates = await listIssueDates();
   } catch {
@@ -15,6 +17,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   try {
     wcDates = await listWcBriefingDates();
+  } catch {
+    /* ignore */
+  }
+  try {
+    topics = await listAllSeoTopicSlugs();
   } catch {
     /* ignore */
   }
@@ -29,6 +36,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const wcPages: MetadataRoute.Sitemap = wcDates.map((d) => ({
     url: `${SITE}/worldcup/${d}`,
     lastModified: `${d}T00:00:00Z`,
+    changeFrequency: "daily",
+    priority: 0.7,
+  }));
+
+  // SEO 主题聚合页（每日循环刷新内容与 lastUpdated）。
+  const topicPages: MetadataRoute.Sitemap = topics.map((t) => ({
+    url: `${SITE}/topic/${t.slug}`,
+    lastModified: `${t.lastUpdated}T00:00:00Z`,
     changeFrequency: "daily",
     priority: 0.7,
   }));
@@ -49,8 +64,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     { url: `${SITE}/worldcup/archive`, changeFrequency: "daily", priority: 0.4 },
+    { url: `${SITE}/topic`, changeFrequency: "daily", priority: 0.6 },
     { url: `${SITE}/about`, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE}/archive`, changeFrequency: "daily", priority: 0.5 },
+    ...topicPages,
     ...editions,
     ...wcPages,
   ];

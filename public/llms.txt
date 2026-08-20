@@ -19,6 +19,7 @@ Prediction Daily（pre-daily.com）每天挑选 Polymarket 上"今天真正发�
 ## 主要页面 / Key pages
 
 - [最新一刊 / Latest edition](https://www.pre-daily.com/)
+- [主题跟踪 / Topic tracker](https://www.pre-daily.com/topic)
 - [关于与方法论 / About & methodology](https://www.pre-daily.com/about)
 - [往期归档 / Archive](https://www.pre-daily.com/archive)
 - [RSS feed](https://www.pre-daily.com/feed.xml)

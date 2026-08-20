@@ -19,6 +19,7 @@ import type {
   DailyMacro,
   DailyNarrative,
   DailyRecap,
+  SeoQueryStat,
 } from "../types";
 import type { WcTeam } from "../worldcup";
 import type { WcTeamFocus, WcFocusMatchBrief } from "../wc-llm";
@@ -96,6 +97,39 @@ export const wcBriefings = pgTable("wc_briefings", {
   costUsd: doublePrecision("cost_usd").notNull().default(0),
 });
 
+// ── SEO 循环 ──────────────────────────────────────────────────────
+
+// SEO 主题聚合页（面向搜索长尾词的落地页）。每日循环 upsert。
+export const seoTopics = pgTable("seo_topics", {
+  slug: text("slug").primaryKey(), // fixed topic key, e.g. "federal-reserve"
+  zhTitle: text("zh_title").notNull(),
+  metaTitle: text("meta_title").notNull(),
+  metaDescription: text("meta_description").notNull(),
+  h1: text("h1").notNull(),
+  intro: text("intro").notNull(),
+  keywords: jsonb("keywords").$type<string[]>().notNull().default([]),
+  marketSlugs: jsonb("market_slugs").$type<string[]>().notNull().default([]),
+  firstSeen: text("first_seen").notNull(), // YYYY-MM-DD
+  lastUpdated: text("last_updated").notNull(), // YYYY-MM-DD
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+});
+
+// One row per loop run: measurement + report (the loop's feedback memory).
+export const seoReports = pgTable("seo_reports", {
+  date: text("date").primaryKey(), // YYYY-MM-DD (Asia/Shanghai)
+  topicsRefreshed: integer("topics_refreshed").notNull().default(0),
+  newTopics: integer("new_topics").notNull().default(0),
+  urlsPinged: jsonb("urls_pinged").$type<string[]>().notNull().default([]),
+  impressions: integer("impressions"), // GSC yesterday (null ⇒ not configured)
+  clicks: integer("clicks"),
+  topQueries: jsonb("top_queries").$type<SeoQueryStat[] | null>(),
+  opportunities: jsonb("opportunities").$type<string[]>().notNull().default([]),
+  reportText: text("report_text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
 export type DailyIssueRow = typeof dailyIssues.$inferSelect;
 export type IssueItemRow = typeof issueItems.$inferSelect;
 export type WcBriefingRow = typeof wcBriefings.$inferSelect;
+export type SeoTopicRow = typeof seoTopics.$inferSelect;
+export type SeoReportRow = typeof seoReports.$inferSelect;

@@ -64,6 +64,13 @@
       "when": 1786693845589,
       "tag": "0008_flimsy_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787245748758,
+      "tag": "0009_nervous_gauntlet",
+      "breakpoints": true
     }
   ]
 }
