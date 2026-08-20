@@ -84,10 +84,12 @@ export async function GET(req: Request) {
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com").replace(/\/$/, "");
   try {
     // ① 采集：最新刊 → 主题映射。
+    // 用「最新已发布刊」而非强制今日刊：主刊偶尔缺刊时，SEO 循环应跟随
+    // 最新内容继续运行（lastUpdated 记录的是刊期，不是循环运行日）。
     const issue = await getLatestIssue();
-    if (!issue || issue.date !== date) {
+    if (!issue) {
       return NextResponse.json(
-        { skipped: true, reason: `no edition for ${date}` },
+        { skipped: true, reason: "no published edition at all" },
         { status: 200 }
       );
     }
@@ -162,7 +164,7 @@ export async function GET(req: Request) {
         keywords: seed.keywords,
         marketSlugs: a.existingSlugs,
         firstSeen: a.firstSeen,
-        lastUpdated: date,
+        lastUpdated: issue.date,
         generatedAt: now,
       };
       await upsertSeoTopic(topic);
