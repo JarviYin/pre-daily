@@ -52,25 +52,31 @@ export const TOPIC_SEEDS: TopicSeed[] = [
     categoryFallback: "tech",
   },
   {
+    // 排在 us-elections 之前：外国选举（俄/法/以等）先命中国别词再落"election"
+    // 这类宽泛词，避免「Russian Parliamentary Election」被美国选举页抢走。
+    slug: "geopolitics",
+    zhTitle: "地缘政治预测",
+    keywords: [
+      "war", "ceasefire", "ukraine", "russia", "russian", "israel",
+      "israeli", "gaza", "iran", "iranian", "taiwan", "venezuela",
+      "military", "nuclear", "nato", "invasion", "troops", "peace",
+      "hostages", "talks", "french", "france", "german", "germany",
+      "korea", "china", "chinese", "beijing", "kremlin", "parliament",
+      "parliamentary", "hormuz", "strait", "rial", "rials", "sanction",
+      "sanctions", "houthi", "yemen", "oil", "crude", "opec",
+    ],
+    categoryFallback: "geopolitics",
+  },
+  {
     slug: "us-elections",
     zhTitle: "美国选举与政治预测",
     keywords: [
       "election", "elections", "president", "presidential", "senate",
       "congress", "governor", "mayor", "nominee", "primary", "vote",
       "trump", "democrat", "democratic", "republican", "gop", "poll",
-      "parliament", "impeachment",
+      "impeachment",
     ],
     categoryFallback: "politics",
-  },
-  {
-    slug: "geopolitics",
-    zhTitle: "地缘政治预测",
-    keywords: [
-      "war", "ceasefire", "ukraine", "russia", "israel", "gaza", "iran",
-      "taiwan", "venezuela", "military", "nuclear", "nato", "invasion",
-      "troops", "peace", "hostages", "talks",
-    ],
-    categoryFallback: "geopolitics",
   },
   {
     slug: "crypto",
