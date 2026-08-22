@@ -135,6 +135,37 @@ export type DailyRecap = {
   detail: string; // 依据（点名市场与数字）
 };
 
+// ── 新闻版（news briefing）────────────────────────────────────────
+// 同一条市场管线的第二编辑角度：把「市场在定价什么」改写成面向大众的
+// 新闻叙述（头条 + 要闻）。LLM 只基于当日刊真实数据写作，slug 必须能
+// 回链到当日市场；快照字段（概率/量/流动性）由管线从市场行注入，
+// 非模型产出。整体可空 ⇒ 生成失败/旧刊无此列时页面优雅降级。
+
+export type NewsItem = {
+  slug: string; // 当日刊市场 slug（校验后回链）
+  category: Category;
+  sourceUrl: string;
+  endDate: string | null;
+  leadOption: string;
+  leadProb: number; // 0..1
+  move24h: number | null; // signed points
+  volume24hr: number; // USD
+  liquidity: number; // USD
+  // LLM 产出（诚实纪律：只基于给定数据）
+  title: string; // 新闻式标题（含具体数字/事实）
+  story: string; // 发生了什么（事件叙述）
+  significance: string; // 为什么重要
+  confidence: string; // 可信度注记
+};
+
+export type NewsBriefing = {
+  date: string; // YYYY-MM-DD（对应刊期）
+  items: NewsItem[]; // [0] = 今日头条，其余按新闻价值排序
+  modelId: string;
+  generatedAt: string; // ISO
+  costUsd: number;
+};
+
 // One published daily edition (maps to daily_issues row + its items).
 export type DailyIssue = {
   date: string; // YYYY-MM-DD (publication date, Asia/Shanghai)
@@ -143,6 +174,7 @@ export type DailyIssue = {
   macro: DailyMacro | null; // 宏观视角（外部行情+日历+LLM解读），可空
   narrative: DailyNarrative | null; // 论点线（thesis+论据+反方+明日观察），可空 ⇒ 回退 summary 卡
   recap: DailyRecap | null; // 昨日判断复盘，可空
+  news: NewsBriefing | null; // 新闻版（头条+要闻），可空 ⇒ /news 降级
   modelId: string; // model actually used for per-market analysis
   summaryModelId: string; // model used for the cross-market summary
   generatedAt: string; // ISO timestamp of successful generation

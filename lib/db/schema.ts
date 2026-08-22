@@ -19,6 +19,7 @@ import type {
   DailyMacro,
   DailyNarrative,
   DailyRecap,
+  NewsBriefing,
   SeoQueryStat,
 } from "../types";
 import type { WcTeam } from "../worldcup";
@@ -37,6 +38,9 @@ export const dailyIssues = pgTable("daily_issues", {
   narrative: jsonb("narrative").$type<DailyNarrative | null>(),
   // 昨日判断复盘 (verdict + evidence); nullable ⇒ no prev issue or recap failed.
   recap: jsonb("recap").$type<DailyRecap | null>(),
+  // 新闻版 (头条+要闻，LLM 改写当日数据); nullable ⇒ 生成失败/旧刊。
+  // upsertIssue 不写此列（由 setIssueNews 在刊后单独更新，重跑主刊不丢新闻）。
+  news: jsonb("news").$type<NewsBriefing | null>(),
   modelId: text("model_id").notNull(), // model used for per-market analysis
   summaryModelId: text("summary_model_id").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),

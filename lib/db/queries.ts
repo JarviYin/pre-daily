@@ -1,7 +1,7 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNotNull } from "drizzle-orm";
 import { getDb } from "./index";
 import { dailyIssues, issueItems, wcBriefings } from "./schema";
-import type { DailyIssue, DailyMarket } from "../types";
+import type { DailyIssue, DailyMarket, NewsBriefing } from "../types";
 import type { WcBriefing } from "../wc-llm";
 
 /** Idempotent publish: upsert the edition + replace its items atomically. */
@@ -24,6 +24,9 @@ export async function upsertIssue(issue: DailyIssue): Promise<void> {
       })
       .onConflictDoUpdate({
         target: dailyIssues.date,
+        // NOTE: `news` is intentionally NOT in `set` — the news briefing is
+        // generated AFTER the edition is persisted; re-running the main
+        // edition (nopush/manual) must not wipe it.
         set: {
           summary: issue.summary,
           briefing: issue.briefing,
@@ -106,6 +109,7 @@ function rowsToIssue(
     macro: head.macro ?? null,
     narrative: head.narrative ?? null,
     recap: head.recap ?? null,
+    news: head.news ?? null,
     modelId: head.modelId,
     summaryModelId: head.summaryModelId,
     generatedAt: head.generatedAt.toISOString(),
@@ -150,6 +154,28 @@ export async function listIssueDates(): Promise<string[]> {
   const rows = await db
     .select({ date: dailyIssues.date })
     .from(dailyIssues)
+    .orderBy(desc(dailyIssues.date));
+  return rows.map((r) => r.date);
+}
+
+// ── 新闻版（news briefing）─────────────────────────────────────
+
+/** Store the day's news briefing (generated after the edition is published). */
+export async function setIssueNews(date: string, news: NewsBriefing): Promise<void> {
+  const db = getDb();
+  await db
+    .update(dailyIssues)
+    .set({ news })
+    .where(eq(dailyIssues.date, date));
+}
+
+/** Edition dates that carry a news briefing, newest first (news archive/SSG). */
+export async function listNewsDates(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ date: dailyIssues.date })
+    .from(dailyIssues)
+    .where(isNotNull(dailyIssues.news))
     .orderBy(desc(dailyIssues.date));
   return rows.map((r) => r.date);
 }

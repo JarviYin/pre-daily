@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { listIssueDates, listWcBriefingDates } from "@/lib/db/queries";
+import { listIssueDates, listWcBriefingDates, listNewsDates } from "@/lib/db/queries";
 import { listAllSeoTopicSlugs } from "@/lib/db/seo-queries";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com";
@@ -9,6 +9,7 @@ export const revalidate = 3600;
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let dates: string[] = [];
   let wcDates: string[] = [];
+  let newsDates: string[] = [];
   let topics: Awaited<ReturnType<typeof listAllSeoTopicSlugs>> = [];
   try {
     dates = await listIssueDates();
@@ -17,6 +18,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   try {
     wcDates = await listWcBriefingDates();
+  } catch {
+    /* ignore */
+  }
+  try {
+    newsDates = await listNewsDates();
   } catch {
     /* ignore */
   }
@@ -48,14 +54,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // 新闻版（/news 最新 + 历史各期）。
+  const newsPages: MetadataRoute.Sitemap = newsDates.map((d) => ({
+    url: `${SITE}/news/${d}`,
+    lastModified: `${d}T00:00:00Z`,
+    changeFrequency: "daily",
+    priority: 0.8,
+  }));
+
   const latest = dates[0];
   const wcLatest = wcDates[0];
+  const newsLatest = newsDates[0];
   return [
     {
       url: SITE,
       lastModified: latest ? `${latest}T00:00:00Z` : undefined,
       changeFrequency: "daily",
       priority: 1,
+    },
+    {
+      url: `${SITE}/news`,
+      lastModified: newsLatest ? `${newsLatest}T00:00:00Z` : undefined,
+      changeFrequency: "daily",
+      priority: 0.9,
     },
     {
       url: `${SITE}/worldcup`,
@@ -69,6 +90,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/archive`, changeFrequency: "daily", priority: 0.5 },
     ...topicPages,
     ...editions,
+    ...newsPages,
     ...wcPages,
   ];
 }

@@ -170,6 +170,20 @@ async function main() {
     console.log("⚠ recap 缺失（无昨日刊或复盘失败）——不阻塞发布");
   }
 
+  // Gate 15: 新闻版 — 存在时：≥3 条、slug 全部回链当日市场、头条标题含数字
+  // （新闻版是 best-effort 增量，缺失只告警不失败——不阻塞主刊）。
+  const nw = issue.news;
+  if (nw) {
+    check("news items ≥3", nw.items.length >= 3, `${nw.items.length}`);
+    const marketSlugs = new Set(issue.markets.map((m) => m.slug));
+    const dangling = nw.items.filter((it) => !marketSlugs.has(it.slug));
+    check("news slugs link to real markets", dangling.length === 0, dangling.map((d) => d.slug).join("; "));
+    check("news headline cites a number", /\d/.test(nw.items[0]?.title ?? ""), nw.items[0]?.title.slice(0, 40));
+    check("news date matches issue", nw.date === issue.date, nw.date);
+  } else {
+    console.log("⚠ news 缺失（生成失败或旧刊）——不阻塞发布");
+  }
+
   console.log(`\n${failures === 0 ? "✅ ALL GATES PASSED" : `❌ ${failures} GATE(S) FAILED`}`);
   process.exit(failures === 0 ? 0 : 1);
 }

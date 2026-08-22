@@ -198,6 +198,8 @@ export async function generateIssue(date: string): Promise<DailyIssue> {
     macro,
     narrative,
     recap,
+    // 新闻版由 cron 在主刊落库后单独生成（lib/news.ts + setIssueNews）。
+    news: null,
     modelId: analysisModelId(),
     summaryModelId: summaryModelId(),
     generatedAt: new Date().toISOString(),

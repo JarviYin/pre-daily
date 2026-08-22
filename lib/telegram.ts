@@ -1,7 +1,7 @@
-import type { DailyIssue } from "./types";
+import type { DailyIssue, NewsBriefing } from "./types";
 import type { WcFixture } from "./wc-schedule";
 import { formatCnDate, formatCnKickoff } from "./date";
-import { formatPct } from "./format";
+import { formatPct, formatMove, formatVolume } from "./format";
 import { teamZh } from "./wc-names";
 import { catalystCalendar } from "./catalyst";
 import { CATEGORY_META } from "./categories";
@@ -183,5 +183,39 @@ export async function sendDailyPush(
     `全文（前 ${issue.markets.length} 市场 + 中文解读）→ ${permalink}\n` +
     `以上为公开数据的信息解读，不构成投资建议`;
 
+  return sendMessage(text);
+}
+
+// ── 新闻版推送（双条推送的第二条）────────────────────────────────
+// 与信号版同一频道、紧随其后发送。格式与用户确认的原型推送一致。
+
+function newsLine(item: NewsBriefing["items"][number]): string {
+  const move = formatMove(item.move24h);
+  const body = [
+    `📊 ${item.leadOption} ${formatPct(item.leadProb)}（${move.text}）｜24h ${formatVolume(item.volume24hr)}｜流动性 ${formatVolume(item.liquidity)}`,
+    `💡 ${item.significance}`,
+    `可信度 · ${item.confidence}`,
+  ].join("\n");
+  return `${item.title}\n${item.story}\n${body}\n→ ${item.sourceUrl}`;
+}
+
+export async function sendNewsPush(
+  news: NewsBriefing,
+  siteUrl: string
+): Promise<{ sent: boolean; reason?: string }> {
+  const [lead, ...rest] = news.items;
+  const text =
+    `📰 Prediction Daily · 新闻版\n` +
+    `${formatCnDate(news.date)} · 全球大事要闻\n` +
+    `基于 Polymarket 真实市场数据，用真金白银的定价改写今日世界要闻\n\n` +
+    `━━ 今日头条 ━━\n${newsLine(lead)}\n\n` +
+    (rest.length
+      ? `━━ 今日要闻 ━━\n` +
+        rest.map((it, i) => `${i + 1}️⃣\n${newsLine(it)}`).join("\n\n") +
+        "\n\n"
+      : "") +
+    `新闻版全文 → ${siteUrl.replace(/\/$/, "")}/news/${news.date}\n` +
+    `信号版早报 → ${siteUrl.replace(/\/$/, "")}/daily/${news.date}\n` +
+    `以上为公开数据的信息解读，不构成投资建议`;
   return sendMessage(text);
 }

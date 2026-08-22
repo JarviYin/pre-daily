@@ -43,7 +43,9 @@ export function estimateCost(u: Usage): number {
 }
 
 let _client: OpenAI | null = null;
-function client(): OpenAI {
+// Shared singleton (per-market analyses, news briefing, …). Exported for
+// lib/news.ts which reuses the same provider config.
+export function client(): OpenAI {
   if (_client) return _client;
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) throw new Error("LLM_API_KEY is not set");

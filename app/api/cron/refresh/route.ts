@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { generateIssue } from "@/lib/pipeline";
-import { upsertIssue, upsertWcBriefing } from "@/lib/db/queries";
+import { upsertIssue, upsertWcBriefing, setIssueNews } from "@/lib/db/queries";
 import { todayShanghai } from "@/lib/date";
 import { sendAlert } from "@/lib/alert";
-import { sendDailyPush } from "@/lib/telegram";
+import { sendDailyPush, sendNewsPush } from "@/lib/telegram";
+import { generateNewsBriefing } from "@/lib/news";
 import { buildWcBriefing, wcActive } from "@/lib/wc-pipeline";
 import type { WcBriefing } from "@/lib/wc-llm";
 
@@ -82,6 +83,29 @@ export async function GET(req: Request) {
       console.log(`[cron] telegram push: ${push.sent ? "sent" : `skipped (${push.reason})`}`);
     }
 
+    // 新闻版（双条推送的第二条）— best-effort：复用当日刊数据，一次 LLM
+    // 调用；失败只影响新闻版（告警 + /news 保持旧内容），绝不影响主刊。
+    let newsSent = false;
+    try {
+      const news = await generateNewsBriefing(issue);
+      await setIssueNews(issue.date, news);
+      revalidatePath("/news");
+      revalidatePath(`/news/${issue.date}`);
+      console.log(
+        `[cron] news briefing ${date}: ${news.items.length} items, $${news.costUsd.toFixed(4)}`
+      );
+      if (nopush) {
+        console.log("[cron] news push: skipped (nopush flag)");
+      } else {
+        const newsPush = await sendNewsPush(news, siteUrl);
+        newsSent = newsPush.sent;
+        console.log(`[cron] news push: ${newsPush.sent ? "sent" : `skipped (${newsPush.reason})`}`);
+      }
+    } catch (err) {
+      console.error(`[cron] news briefing FAILED ${date} (main edition unaffected):`, err);
+      await sendAlert(`[pre-daily] 新闻版生成失败 ${date}：${err instanceof Error ? err.message : String(err)}（主刊不受影响）`);
+    }
+
     return NextResponse.json({
       published: true,
       date,
@@ -91,6 +115,7 @@ export async function GET(req: Request) {
       costUsd: Number(issue.costUsd.toFixed(4)),
       generatedAt: issue.generatedAt,
       pushed: pushSent,
+      newsPushed: newsSent,
       narrative: issue.narrative ? { thesis: issue.narrative.thesis } : null,
       recap: issue.recap ? issue.recap.verdict : null,
       worldCup: wc ? { angle: wc.angleKey, headline: wc.headline } : null,

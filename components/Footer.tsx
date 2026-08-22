@@ -21,6 +21,9 @@ export function Footer({
         <Link href="/archive" className="text-muted transition-colors hover:text-bull">
           往期归档
         </Link>
+        <Link href="/news" className="text-muted transition-colors hover:text-bull">
+          📰 新闻版
+        </Link>
         <Link href="/worldcup" className="transition-colors hover:text-bull" style={{ color: "#f5b13d" }}>
           🏆 世界杯专题
         </Link>

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { generateIssue } from "@/lib/pipeline";
-import { upsertIssue, getIssue } from "@/lib/db/queries";
+import { upsertIssue, getIssue, setIssueNews } from "@/lib/db/queries";
 import { todayShanghai } from "@/lib/date";
-import { sendDailyPush } from "@/lib/telegram";
+import { sendDailyPush, sendNewsPush } from "@/lib/telegram";
 import { sendAlert } from "@/lib/alert";
+import { generateNewsBriefing } from "@/lib/news";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -45,12 +46,26 @@ export async function GET(req: Request) {
     revalidatePath(`/daily/${date}`);
     revalidatePath("/archive");
 
-    // 补发推送（与主 cron 相同路径）。
+    // 补发推送（与主 cron 相同路径：信号版 + 新闻版双条）。
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pre-daily.com";
     const push = await sendDailyPush(issue, siteUrl);
+
+    // 新闻版 — best-effort，与主 cron 相同的降级规则。
+    let newsPushed = false;
+    try {
+      const news = await generateNewsBriefing(issue);
+      await setIssueNews(issue.date, news);
+      revalidatePath("/news");
+      revalidatePath(`/news/${issue.date}`);
+      const newsPush = await sendNewsPush(news, siteUrl);
+      newsPushed = newsPush.sent;
+    } catch (err) {
+      console.error(`[watchdog] news briefing FAILED ${date} (edition unaffected):`, err);
+    }
+
     await sendAlert(
       `[pre-daily] 看门狗补发今日刊 ${date}：${issue.markets.length} 个市场，` +
-        `推送 ${push.sent ? "已发送" : `跳过(${push.reason})`}。主 cron 疑似未运行或失败。`
+        `推送 ${push.sent ? "已发送" : `跳过(${push.reason})`}，新闻版 ${newsPushed ? "已推送" : "未推送"}。主 cron 疑似未运行或失败。`
     );
 
     console.log(`[watchdog] recovered ${date}: ${issue.markets.length} markets, cost≈$${issue.costUsd.toFixed(4)}`);
@@ -61,6 +76,7 @@ export async function GET(req: Request) {
       markets: issue.markets.length,
       costUsd: Number(issue.costUsd.toFixed(4)),
       pushed: push.sent,
+      newsPushed,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
