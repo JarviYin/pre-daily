@@ -10,6 +10,7 @@ export const CATEGORY_META: Record<
   sports: { label: "体育", en: "Sports" },
   geopolitics: { label: "地缘", en: "Geopolitics" },
   politics: { label: "政治", en: "Politics" },
+  ai: { label: "AI", en: "AI" },
   tech: { label: "科技", en: "Tech" },
   other: { label: "其他", en: "Other" },
 };
@@ -44,10 +45,21 @@ const RULES: { category: Category; keywords: string[] }[] = [
     ],
   },
   {
+    // AI 垂直类目（2026-08 产品决策）：AGI 时间线/模型里程碑/AI 公司估值/IPO 等。
+    // 排在 tech 之前 —— "OpenAI IPO" 应落 AI 而非泛科技。
+    category: "ai",
+    keywords: [
+      "ai", "agi", "openai", "anthropic", "claude", "chatgpt", "gpt",
+      "llm", "llms", "gemini", "deepseek", "grok", "xai", "mistral",
+      "cohere", "perplexity", "sora", "copilot", "midjourney",
+      "artificial", "superintelligence",
+    ],
+  },
+  {
     category: "tech",
     keywords: [
-      "ai", "openai", "nvidia", "apple", "tesla", "google", "microsoft",
-      "tech", "chatgpt", "gpt", "llm", "anthropic", "spacex",
+      "nvidia", "apple", "tesla", "google", "microsoft",
+      "tech", "spacex",
     ],
   },
   {

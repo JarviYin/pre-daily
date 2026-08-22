@@ -7,6 +7,7 @@ const COLORS: Record<Category, string> = {
   sports: "#4f9dff",
   geopolitics: "#ff5d6c",
   politics: "#b98bff",
+  ai: "#a3e635",
   tech: "#46d6e0",
   other: "#9aa1ad",
 };

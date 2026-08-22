@@ -49,7 +49,8 @@ export const TOPIC_SEEDS: TopicSeed[] = [
       "llm", "nvidia", "deepseek", "gemini", "grok", "chatbot", "model",
       "models", "robot", "robotics", "artificial",
     ],
-    categoryFallback: "tech",
+    // 2026-08 起市场走独立 `ai` 类目（旧刊仍存 tech，由关键词命中兜住）。
+    categoryFallback: "ai",
   },
   {
     // 排在 us-elections 之前：外国选举（俄/法/以等）先命中国别词再落"election"

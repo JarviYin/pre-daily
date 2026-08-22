@@ -29,6 +29,23 @@ const FINANCE_FETCH_LIMIT = 50;
 // Editorial guarantee: the digest always carries some macro/finance coverage
 // (product decision 2026-07); quota slots are filled by heat among these cats.
 const FINANCE_MIN = 2;
+// AI vertical (product decision 2026-08): Polymarket's AI markets (AGI
+// timelines / model milestones / AI-company valuations / IPOs) are rich but
+// rarely survive a top-by-volume pull. Same playbook as finance: a dedicated
+// tag pull + a guaranteed quota + an evergreen watchlist.
+const AI_TAG = "ai";
+const AI_FETCH_LIMIT = 50;
+const AI_MIN = 2;
+// Evergreen high-liquidity AI markets fetched by slug so the vertical always
+// has credible candidates even on days the tag pull misses them (best-effort;
+// each still passes the full curation/liquidity/settled gates). Slugs
+// verified live 2026-08. Revisit when end dates approach.
+const AI_WATCHLIST_SLUGS = [
+  "which-company-has-best-ai-model-end-of-2026",
+  "openai-ipo-by",
+  "will-anthropics-valuation-hit-by-december-31",
+  "gpt-6-released-by",
+];
 const MAX_OUTCOMES = 6; // top outcomes shown; remainder folded into "其他"
 const MAX_PER_CATEGORY = 3; // editorial: stop one topic monopolising the board
 const SETTLED_THRESHOLD = 0.985; // leading prob ≥ this ⇒ basically decided
@@ -152,6 +169,16 @@ async function fetchTopEvents(limit: number, tagSlug?: string): Promise<RawEvent
     (tagSlug ? `&tag_slug=${tagSlug}` : "");
   const data = await fetchWithRetry(url);
   return Array.isArray(data) ? (data as RawEvent[]) : [];
+}
+
+/** Fetch specific events by slug (watchlist). Best-effort per slug. */
+async function fetchEventsBySlugs(slugs: string[]): Promise<RawEvent[]> {
+  const results = await Promise.allSettled(
+    slugs.map((s) => fetchWithRetry(`${GAMMA_BASE}/events?slug=${encodeURIComponent(s)}`))
+  );
+  return results.flatMap((r) =>
+    r.status === "fulfilled" && Array.isArray(r.value) ? (r.value as RawEvent[]) : []
+  );
 }
 
 /**
@@ -449,19 +476,25 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
     movers[0] ?? [...eligible].sort((a, b) => b.heatScore - a.heatScore)[0];
   if (hero) take(hero, "hero");
 
-  // 1b) Finance quota — the digest must always carry macro/finance coverage,
-  //     even when politics/geopolitics dominates the movers. Best candidates
-  //     by heat among those categories claim their slots before the open pool.
-  const FINANCE_CATS: ReadonlySet<Category> = new Set(["macro", "crypto"]);
-  const financePool = eligible
-    .filter((m) => FINANCE_CATS.has(m.category))
-    .sort((a, b) => b.heatScore - a.heatScore);
-  let financeCount = chosen.filter((m) => FINANCE_CATS.has(m.category)).length;
-  for (const m of financePool) {
-    if (financeCount >= FINANCE_MIN) break;
-    if (isDuplicate(m)) continue;
-    take(m, "heat");
-    financeCount++;
+  // 1b) Editorial quotas — the digest must always carry macro/finance coverage
+  //     (FINANCE_MIN) and AI vertical coverage (AI_MIN), even when politics/
+  //     geopolitics dominates the movers. Best candidates by heat among those
+  //     categories claim their slots before the open pool.
+  const QUOTAS: { name: string; cats: ReadonlySet<Category>; min: number }[] = [
+    { name: "finance", cats: new Set(["macro", "crypto"]), min: FINANCE_MIN },
+    { name: "ai", cats: new Set(["ai"]), min: AI_MIN },
+  ];
+  for (const q of QUOTAS) {
+    const pool = eligible
+      .filter((m) => q.cats.has(m.category))
+      .sort((a, b) => b.heatScore - a.heatScore);
+    let count = chosen.filter((m) => q.cats.has(m.category)).length;
+    for (const m of pool) {
+      if (count >= q.min) break;
+      if (isDuplicate(m)) continue;
+      take(m, "heat");
+      count++;
+    }
   }
 
   // 2) Anchors — evergreen context: top by TOTAL volume, not already chosen.
@@ -512,21 +545,36 @@ function selectEdition(markets: RawCuratedMarket[], topN: number): RawCuratedMar
   return ordered.slice(0, topN);
 }
 
-/** End-to-end: fetch (main + finance tag) → parse → curate → heat-rank → compose. */
+/** End-to-end: fetch (main + finance tag + ai tag + AI watchlist) → parse → curate → heat-rank → compose. */
 export async function getEditionMarkets(topN: number): Promise<RawCuratedMarket[]> {
   const now = Date.now();
-  // The finance pull is best-effort: its failure must not kill the edition.
-  const [events, financeEvents] = await Promise.all([
+  // Supplemental pulls are best-effort: their failure must not kill the edition.
+  const [events, financeEvents, aiEvents, watchlistEvents] = await Promise.all([
     fetchTopEvents(FETCH_LIMIT),
     fetchTopEvents(FINANCE_FETCH_LIMIT, FINANCE_TAG).catch((err) => {
       console.warn("[gamma] finance tag fetch failed (continuing without):", err);
       return [] as RawEvent[];
     }),
+    fetchTopEvents(AI_FETCH_LIMIT, AI_TAG).catch((err) => {
+      console.warn("[gamma] ai tag fetch failed (continuing without):", err);
+      return [] as RawEvent[];
+    }),
+    fetchEventsBySlugs(AI_WATCHLIST_SLUGS).catch((err) => {
+      console.warn("[gamma] ai watchlist fetch failed (continuing without):", err);
+      return [] as RawEvent[];
+    }),
   ]);
   const seen = new Set(events.map((e) => String(e.id ?? e.slug)));
+  const merge = (extra: RawEvent[]) => {
+    const fresh = extra.filter((e) => !seen.has(String(e.id ?? e.slug)));
+    for (const e of fresh) seen.add(String(e.id ?? e.slug));
+    return fresh;
+  };
   const merged = [
     ...events,
-    ...financeEvents.filter((e) => !seen.has(String(e.id ?? e.slug))),
+    ...merge(financeEvents),
+    ...merge(aiEvents),
+    ...merge(watchlistEvents),
   ];
   const parsed = merged
     .map((e) => eventToMarket(e, now))

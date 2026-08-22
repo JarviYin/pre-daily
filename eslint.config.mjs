@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local build scratch dirs (sandbox delete-guard workaround).
+    ".next-*/**",
   ]),
 ]);
 

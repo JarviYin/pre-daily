@@ -96,6 +96,11 @@ async function main() {
   const financeCnt = ms.filter((m) => m.category === "macro" || m.category === "crypto").length;
   check("≥2 宏观/金融类市场 (finance quota)", financeCnt >= 2, `${financeCnt}`);
 
+  // Gate 7e: AI vertical quota — ≥2 ai markets (tag pull + watchlist backed).
+  // 2026-08-22 之前的旧刊无独立 ai 类目，跑历史日期会 FAIL，属预期。
+  const aiCnt = ms.filter((m) => m.category === "ai").length;
+  check("≥2 AI 类目市场 (AI quota)", aiCnt >= 2, `${aiCnt}`);
+
   // ── v2.1 heat / curation gates ──────────────────────────────────────────
   // Gate 8: curation — no sports market survived (mechanical churn excluded).
   const sports = ms.filter((m) => m.category === "sports");
