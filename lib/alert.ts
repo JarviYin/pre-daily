@@ -1,8 +1,10 @@
 // Best-effort failure alert via Telegram. No-op if not configured.
-// Phase 3 will reuse the same bot token for the daily push.
+// Fallback chain (2026-08): TELEGRAM_ALERT_CHAT_ID → TELEGRAM_CHANNEL_ID —
+// 08-15~20 断更期间告警只进了 Vercel 日志（专用 chat 未配置），没人看到。
+// 发到主频道虽吵，但强于静默；配置专用 chat 后自动分流。
 export async function sendAlert(message: string): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
+  const chatId = process.env.TELEGRAM_ALERT_CHAT_ID ?? process.env.TELEGRAM_CHANNEL_ID;
   if (!token || !chatId) {
     console.error("[alert]", message);
     return;

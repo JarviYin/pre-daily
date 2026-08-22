@@ -1,6 +1,6 @@
 # 会话上下文交接（Session Handoff）
 
-> 新 session 开场先读本文件。最后更新：2026-08-21。仓库：pre-daily（main 分支 HEAD `ad37b16`）。
+> 新 session 开场先读本文件。最后更新：2026-08-22。仓库：pre-daily（main 分支 HEAD `a74f86e`）。
 
 ## 一句话定位
 
@@ -10,48 +10,45 @@
 - 生产 DB：**Railway Postgres**（不是 Neon）。本地 `.env` 已从 Vercel production 拉回（`vercel env pull .env --environment=production --yes`），含 DATABASE_URL / LLM_API_KEY / CRON_SECRET / TELEGRAM_* 等。
 - ⚠️ 生产库是 **push 工作流**：`__drizzle_migrations` 表不存在，`drizzle-kit migrate` 不能直接用（会从 0000 重放导致建表冲突）。改 schema 后：本地 `pnpm drizzle-kit generate` 生成 SQL，再**手动在目标库执行** SQL（表/列都用 IF NOT EXISTS 幂等写法）。
 
-## 最近一个 session 做了什么（三次上线）
+## 最近一个 session 做了什么（2026-08-22，四个上线）
 
-### 1. 论点线重构（commit `407ba7e`）
-产品痛点"内容散、insight 不足"的修复：
-- **单市场分析注入宏观上下文**：`macroBriefForAnalysis()`（lib/macro.ts）把行情 chips + 未来 5 天日历喂给每个市场分析师（lib/llm.ts `analyzeMarket(m, macroCtx)`）。
-- **论点线 narrative**：`summarizeDay` 输出结构化 `thesis + pillars(2-4论据块) + counterView + watch`，落库 `daily_issues.narrative`（jsonb）。页面 `NarrativeBlock` 取代 summary 卡（旧刊自动回退）。
-- **昨日判断复盘 recap**：`recapDay()`（lib/llm.ts）+ `buildRecap()`（lib/pipeline.ts）对比昨刊与今日同 slug 市场，只判 hit/miss/pending（诚实纪律：数据不足一律 pending）。落库 `daily_issues.recap`。
-- 页面 `EditionView` 重构为论点线布局（复盘→论点→Hero→热度榜折叠→视角→催化剂→附录），热度榜默认展开 3 条（`Expandable` 客户端组件）。
-- QA（scripts/qa.ts）新增 Gate 13/14。迁移 `0008`（narrative/recap 列）。
+### 1. SEO 主题映射精度修复（commit `db25bb5`）
+- 根因：us-elections 关键词无国别限定 + geopolitics 优先级靠后 + 实体词缺失（Russian/French Election 落美国选举页、Hormuz/Iranian rials 落宏观页）。
+- 修复：geopolitics 种子前置 + 实体词扩充（hormuz/rial/sanction/opec 等）；`scripts/remap-topics.ts` 全历史重映射（8 主题页从 4 → 8 个有内容）。
 
-### 2. 新闻版产品原型（commit `67bc889`）
-PM 方向验证："把 Polymarket 重大新闻总结出来"。
-- 预览页 `/preview/news`（noindex）+ 数据文件 `lib/previewNewsData.ts`（真实一刊数据 + LLM 改写，数字已人工校正）+ 生成脚本 `scripts/gen-preview-news.ts` + 推送脚本 `scripts/push-preview-news.ts`（已推到 @predaily，message 147）。
-- 用户对新闻版满意（"就这样"）。**正式化尚未做**（下一步候选：接入每日 cron、`/news` 正式路由、主推送格式切换或双条推送）。
+### 2. 新闻版正式化（commit `c636ae8`）
+- `daily_issues.news` jsonb 列（迁移 `0010`，本地+生产均已执行）；`lib/news.ts` 生成（slug 硬校验回链，<3 条视为失败）；refresh/watchdog cron 主刊落库后 best-effort 生成；失败仅告警不影响主刊。
+- `/news` 首页 + `/news/[date]` 历史（ISR 300s）；NewsView 共享组件；preview 原型页改存档视图。
+- **双条推送**：主刊信号版后追加新闻版推送（用户已确认格式）。`scripts/gen-news.ts` 可回填（08-21 已回填，/news 上线即有内容）。
+- sitemap 收录 /news；QA Gate 15 校验回链；upsertIssue 不写 news 列（重跑主刊不丢新闻）。
 
-### 3. 每日 SEO 循环（commit `23eb26b` + `a267d90` + `ad37b16`）
-目标：通过 SEO 搜索带来流量曝光。每天自动跑一轮"采集→建页→分发→测量→日报→反馈"：
-- **主题聚合页** `/topic/*`（8 个种子主题见 `lib/seo-topics.ts`：美联储利率/日本央行/科技IPO/AI时间线/美国选举/地缘/加密/宏观数据）。市场→主题是**确定性关键词+分类兜底映射**；文案每日由 LLM 批量刷新（`lib/seo-llm.ts`），失败回退确定性文案（绝不留空）。
-- 表：`seo_topics`、`seo_reports`（迁移 `0009`，已在生产建表）。查询：`lib/db/seo-queries.ts`。
-- 分发/测量：`lib/seo-channels.ts` —— IndexNow（用站点已有 key `90294919…`，验证文件在 public/）、Baidu 主动推送（env-gated）、GSC service-account JWT 拉昨日曝光/点击/top 查询（env-gated）。
-- Cron 时间表（vercel.json，全部 Bearer `CRON_SECRET` 鉴权）：
-  | UTC | 北京 | 路径 | 职责 |
-  |---|---|---|---|
-  | 00:00 | 8:00 | /api/cron/refresh | 主刊生成+发布+Telegram推送 |
-  | 00:30 | 8:30 | /api/cron/seo | SEO 循环 |
-  | 00:45 | 8:45 | /api/cron/watchdog | 看门狗：今日刊缺失则补发 |
-  | 12:00 | 20:00 | /api/cron/wc-push | 世界杯数据刷新（已过 SUNSET，no-op） |
-- sitemap.ts / public/llms.txt 已收录 topic 页。首轮实测：4 个主题页上线、IndexNow 提交成功、GSC/Baidu/alert chat 未配置（优雅降级）。
+### 3. AI 垂直内容（commit `a74f86e`）
+- 独立 `ai` 类目（CATEGORIES + categories.ts AI 规则置于 tech 前 + CategoryChip 配色）。
+- gamma.ts 抄 finance quota 模式：`tag_slug=ai` 补充拉取(50) + AI_MIN=2 配额（与 finance 配额一起泛化）+ 常青 watchlist 4 市场按 slug 拉取（best-effort，全走既有门槛）。
+- QA Gate 7e；`scripts/smoke-edition.ts` 冒烟脚本（不调 LLM 不写库，实测 AI=3/finance=3 配额生效）。
+
+### 4. 断更根因排查（2026-08-22，无新 commit，结论如下）
+- **实际断更日期是 08-15/17/19/20 四天**（16/18 正常发布），非此前以为的 17~20 连续四天。
+- 时间线强相关：08-14 16:32 CST 部署论点线重构（407ba7e，管线新增 narrative/recap/宏观注入等大量 LLM 工作）后，**第一次 cron 运行（08-15）即开始间歇失败**。成功日全程仅 ~2 分钟（generatedAt 08:02），排除 Hobby 60s 限制（团队是 Pro，maxDuration=300 生效）。
+- 运行时日志已过保留期（Pro ~1 天），无法取得直接证据；疑似新管线偶发 LLM/依赖超时或报错，整刊原子性（失败不落库）+ 告警无人可见放大了影响。
+- 已加固：看门狗 cron（08-20 上线，21/22 均正常）；`lib/alert.ts` 告警回退到主推送频道（ALERT_CHAT_ID 未配置时不再静默）。
+- 若再现：第一时间 `curl -H "Authorization: Bearer $CRON_SECRET" https://www.pre-daily.com/api/cron/refresh` 复跑 + 看 Vercel Observability 日志（保留期短，要快）。
+
+## 上一轮 session（2026-08-21 前的三个上线，详见 git log）
+
+论点线重构（`407ba7e`）· 新闻版原型（`67bc889`）· 每日 SEO 循环（`23eb26b`+`a267d90`+`ad37b16`）。
 
 ## 当前线上状态
 
-- 今日刊（2026-08-21）已发布（看门狗上线前手动补发过一次；此前 08-17~20 断更，根因未完全定位——与 08-14 一次部署 Error 窗口有关，看门狗即为兜底）。
-- `/topic`、`/topic/[slug]`、`/preview/news` 均在线 200。
+- 今日刊（2026-08-22）已发布；`/daily`、`/news`、`/topic`、`/preview/news` 全部 200。
 - 世界杯管线已过 SUNSET（2026-07-20），`wcActive()` 返回 false，相关代码休眠。
 
 ## 已知问题 / 待办候选（按价值排序）
 
-1. **配置 SEO 测量与告警**（用户可自助）：GSC 服务账号（`GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GSC_SITE_URL`）、Baidu token（`BAIDU_PUSH_*`）、`TELEGRAM_ALERT_CHAT_ID`（cron 失败告警现在只进日志，没人看到）。配置后循环的"测量+反馈"环节激活。
-2. **主题映射精度**：NVIDIA 市值市场因 Gamma tag 归入 macro 而落到 `macro-economy` 页（metaTitle 与页面主题有偏差）。种子词表/顺序可迭代；GSC 数据来了以后用"机会反馈"（`seo_reports.opportunities`）发现错配。
-3. **新闻版正式化**：用户已确认方向。方案：生成逻辑并入 refresh cron（复用当日市场数据，一次 LLM 调用 ~$0.002）→ `/news` + `/news/[date]` + 主页入口/推送格式决策。
-4. **AI 垂直内容**：Polymarket AI 市场丰富（AGI 时间线/模型里程碑/AI IPO/竞赛归属），但现产品几乎不覆盖（当日政治+宏观占 70%）。已给方案：独立 `ai` 类目 + 保底配额（抄 finance quota 模式）+ AI watchlist。
-5. **断更根因**：08-17~20 cron 未产出，建议下次断更时用 `vercel logs` 查 cron 触发记录（本 session 日志流超时未查到）。
+1. **配置 SEO 测量与告警凭据**（用户自助，全部缺失中）：GSC 服务账号（`GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GSC_SITE_URL`）、Baidu token（`BAIDU_PUSH_*`）、`TELEGRAM_ALERT_CHAT_ID`（给 @predaily_bot 发条消息后从 getUpdates 拿 chat_id；已加主频道回退，配置后告警分流）。配置后 SEO 循环"测量+反馈"环节激活。
+2. **旧刊 ai 类目回填**：08-22 前的历史刊 AI 市场仍标 tech（仅影响主题页映射的美观，关键词命中已兜住大部分）；可在下次 remap 时顺手处理。
+3. **AI watchlist 维护**：4 个常青市场 slug 到期（2026-12/2027-01）前需要换血；ai-timeline 主题页会自然受益于新类目。
+4. **新闻版历史回填**（可选）：`pnpm tsx scripts/gen-news.ts YYYY-MM-DD` 可逐日回填更早刊期。
 
 ## 环境与命令备忘
 
@@ -69,13 +66,15 @@ pnpm tsx scripts/qa.ts [YYYY-MM-DD]        # 发布质量门禁
 # schema 变更：生成迁移 → 手动在目标库执行 SQL
 pnpm drizzle-kit generate
 
-# 新闻版原型：重新生成内容 / 推送 Telegram
-pnpm tsx scripts/gen-preview-news.ts
-pnpm tsx scripts/push-preview-news.ts
+# 新闻版：手动生成/回填某日（生产库需带 TubaLabs .env 的 DATABASE_URL 运行）
+pnpm tsx scripts/gen-news.ts [YYYY-MM-DD]
+# 选刊冒烟（不调 LLM 不写库）：验证类目配额/watchlist/策展
+pnpm tsx scripts/smoke-edition.ts [topN]
 
 # 部署 = git push origin main（Vercel 自动构建）；查状态/日志：
 npx vercel ls pre-daily
 npx vercel inspect <deployment-url> --logs
+# （本机 vercel CLI 已装在 /Users/jarvi/.workbuddy/binaries/node/workspace/node_modules/vercel/dist/vc.js，直接 node 执行可绕 npx 安装超时）
 
 # 手动触发线上 cron（SECRET 从 .env 读）
 curl -H "Authorization: Bearer $CRON_SECRET" https://www.pre-daily.com/api/cron/seo
@@ -86,15 +85,17 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://www.pre-daily.com/api/cron/
 | 文件 | 职责 |
 |---|---|
 | lib/pipeline.ts | 主刊端到端编排（含"绝不发假数据"硬规则 + recap 组装） |
-| lib/gamma.ts | Polymarket 抓取/解析/策展/三层选刊（hero+heat+anchor，热度分） |
+| lib/gamma.ts | Polymarket 抓取/解析/策展/三层选刊（hero+heat+anchor，热度分，finance/AI 双配额 + AI watchlist） |
+| lib/news.ts · lib/alert.ts | 新闻版生成（回链校验）· 失败告警（回退主频道） |
 | lib/llm.ts | 逐市场分析 + 主编总结(narrative) + 复盘(recapDay) |
 | lib/macro.ts | 宏观快照(10源) + 日历 + 上下文注入 |
 | lib/seo-topics.ts / seo-llm.ts / seo-channels.ts / db/seo-queries.ts | SEO 循环四件套 |
-| app/api/cron/{refresh,seo,watchdog,wc-push}/route.ts | 四个定时任务 |
-| app/topic/* · app/preview/news/* | SEO 主题页 · 新闻版原型 |
-| components/EditionView.tsx · NarrativeBlock · RecapBlock · Expandable | 论点线页面 |
-| drizzle/0008 · 0009 | narrative/recap 列 · SEO 两表 |
-| scripts/qa.ts | 发布前质量门禁（12+ 项） |
+| app/api/cron/{refresh,seo,watchdog,wc-push}/route.ts | 四个定时任务（refresh/watchdog 均含新闻版 best-effort） |
+| app/topic/* · app/news/* · app/preview/news/* | SEO 主题页 · 新闻版正式路由 · 新闻版原型存档 |
+| components/EditionView.tsx · NarrativeBlock · RecapBlock · Expandable · NewsView | 论点线页面 · 新闻版视图 |
+| drizzle/0008 · 0009 · 0010 | narrative/recap 列 · SEO 两表 · news 列 |
+| scripts/qa.ts | 发布前质量门禁（15+ 项） |
+| scripts/gen-news.ts · smoke-edition.ts · remap-topics.ts | 新闻版回填 · 选刊冒烟 · 主题重映射 |
 
 ## 开发规约（重要）
 
