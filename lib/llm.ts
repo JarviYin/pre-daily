@@ -276,7 +276,7 @@ export type DailyBriefingResult = {
 };
 
 /**
- * Cross-market editorial in ONE thinking-mode call: 今日主线 + 资金信号 +
+ * Cross-market editorial in ONE call: 今日主线 + 资金信号 +
  * 资产联动 + 宏观视角三段。Sees every market's per-market analysis and (when
  * available) the real external snapshot + macro calendar from lib/macro.ts.
  */
@@ -350,11 +350,10 @@ export async function summarizeDay(
     ],
     response_format: { type: "json_object" },
     temperature: 0.5, // no-op in thinking mode; kept for non-DeepSeek overrides
-    // Reasoning tokens count toward max_tokens on DeepSeek thinking mode —
-    // generous headroom so the JSON never truncates; cost is one call/day.
+    // Thinking burns the shared max_tokens budget (reasoning_content + content).
+    // At 8k cap we saw ~40% failures: empty content or truncated JSON (finish_reason=length).
     max_tokens: 8000,
-    // Explicitly ON: the daily editorial is the one call worth deep reasoning.
-    ...thinkingParam(model, true),
+    ...thinkingParam(model, false),
   });
 
   const raw = (res.choices[0]?.message?.content ?? "").trim();
@@ -467,7 +466,7 @@ export async function recapDay(input: RecapInput): Promise<{
     response_format: { type: "json_object" },
     temperature: 0.3,
     max_tokens: 3000,
-    ...thinkingParam(model, true),
+    ...thinkingParam(model, false),
   });
 
   const raw = (res.choices[0]?.message?.content ?? "").trim();
