@@ -67,7 +67,7 @@ export function analysisModelId(): string {
 // V4 models default to thinking ENABLED, so both directions must be explicit.
 // The `thinking` body param is DeepSeek-V4-specific — never send it to other
 // providers (GLM/Kimi via LLM_BASE_URL) or to the legacy alias names.
-function thinkingParam(model: string, enabled: boolean): Record<string, unknown> {
+export function thinkingParam(model: string, enabled: boolean): Record<string, unknown> {
   return model.startsWith("deepseek-v4")
     ? { thinking: { type: enabled ? "enabled" : "disabled" } }
     : {};

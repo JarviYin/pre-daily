@@ -10,7 +10,7 @@
 //  • 数字快照（概率/量/流动性）由本模块从市场行注入，非模型产出；
 //  • 有效条目 < 3 视为生成失败（调用方降级为无新闻版，绝不硬凑）。
 import { z } from "zod";
-import { client, analysisModelId, estimateCost, type Usage } from "./llm";
+import { client, analysisModelId, estimateCost, thinkingParam, type Usage } from "./llm";
 import { CATEGORY_META } from "./categories";
 import type { DailyIssue, NewsBriefing, NewsItem } from "./types";
 
@@ -43,7 +43,7 @@ function buildPrompt(issue: DailyIssue): string {
       ? `，${Math.max(0, Math.round((Date.parse(m.endDate) - Date.now()) / 86_400_000))}天后截止`
       : "";
     return (
-      `${i + 1}. [${CATEGORY_META[m.category].label}] ${m.title}｜` +
+      `${i + 1}. slug=${m.slug} [${CATEGORY_META[m.category].label}] ${m.title}｜` +
       `领先选项 ${lead.option} ${pct(lead.probability)}${mv}${sg}｜` +
       `24h量 $${(m.volume24hr / 1e6).toFixed(1)}M，流动性 $${(m.liquidity / 1e6).toFixed(2)}M${dLeft}`
     );
@@ -83,6 +83,8 @@ export async function generateNewsBriefing(issue: DailyIssue): Promise<NewsBrief
     response_format: { type: "json_object" },
     temperature: 0.4,
     max_tokens: 4000,
+    // V4 thinking shares max_tokens with content; at 4k we saw empty JSON (finish_reason=length).
+    ...thinkingParam(model, false),
   });
 
   const usage: Usage = {
@@ -90,7 +92,8 @@ export async function generateNewsBriefing(issue: DailyIssue): Promise<NewsBrief
     completionTokens: res.usage?.completion_tokens ?? 0,
   };
 
-  const raw = res.choices[0]?.message?.content ?? "{}";
+  const raw = (res.choices[0]?.message?.content ?? "").trim();
+  if (!raw) throw new Error("LLM returned empty news briefing JSON");
   const parsed = NewsSchema.parse(JSON.parse(raw));
 
   // 诚实性硬校验：slug 必须回链到当日市场；编造的条目直接丢弃。
