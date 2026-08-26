@@ -186,8 +186,8 @@ export async function sendDailyPush(
   return sendMessage(text);
 }
 
-// ── 新闻版推送（双条推送的第二条）────────────────────────────────
-// 与信号版同一频道、紧随其后发送。格式与用户确认的原型推送一致。
+// ── 新闻版推送（频道唯一日更）──────────────────────────────────
+// 信号版仍在网站发布，Telegram 只推新闻版。
 
 function newsLine(item: NewsBriefing["items"][number]): string {
   const move = formatMove(item.move24h);
@@ -214,8 +214,7 @@ export async function sendNewsPush(
         rest.map((it, i) => `${i + 1}️⃣\n${newsLine(it)}`).join("\n\n") +
         "\n\n"
       : "") +
-    `新闻版全文 → ${siteUrl.replace(/\/$/, "")}/news/${news.date}\n` +
-    `信号版早报 → ${siteUrl.replace(/\/$/, "")}/daily/${news.date}\n` +
+    `全文 → ${siteUrl.replace(/\/$/, "")}/news/${news.date}\n` +
     `以上为公开数据的信息解读，不构成投资建议`;
   return sendMessage(text);
 }
