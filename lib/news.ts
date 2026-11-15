@@ -9,22 +9,10 @@
 //  • slug 必须原样来自当日市场，模型编造的 slug 直接丢弃该条；
 //  • 数字快照（概率/量/流动性）由本模块从市场行注入，非模型产出；
 //  • 有效条目 < 3 视为生成失败（调用方降级为无新闻版，绝不硬凑）。
-import { z } from "zod";
 import { client, analysisModelId, estimateCost, thinkingParam, type Usage } from "./llm";
 import { CATEGORY_META } from "./categories";
+import { parseNewsItems } from "./news-validation";
 import type { DailyIssue, NewsBriefing, NewsItem } from "./types";
-
-const MIN_ITEMS = 3;
-
-const NewsItemSchema = z.object({
-  slug: z.string().trim().min(1),
-  title: z.string().trim().min(6).max(60),
-  story: z.string().trim().min(10).max(500),
-  significance: z.string().trim().min(5).max(300),
-  confidence: z.string().trim().min(2).max(80),
-});
-
-const NewsSchema = z.object({ items: z.array(NewsItemSchema).min(1) });
 
 function pct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
@@ -94,12 +82,11 @@ export async function generateNewsBriefing(issue: DailyIssue): Promise<NewsBrief
 
   const raw = (res.choices[0]?.message?.content ?? "").trim();
   if (!raw) throw new Error("LLM returned empty news briefing JSON");
-  const parsed = NewsSchema.parse(JSON.parse(raw));
-
-  // 诚实性硬校验：slug 必须回链到当日市场；编造的条目直接丢弃。
+  // 逐条校验，只有有效且可回链到当日市场的条目才参与发布。
   const bySlug = new Map(issue.markets.map((m) => [m.slug, m]));
+  const parsed = parseNewsItems(raw, new Set(bySlug.keys()));
   const items: NewsItem[] = [];
-  for (const it of parsed.items) {
+  for (const it of parsed) {
     const m = bySlug.get(it.slug);
     if (!m) continue;
     const lead = m.outcomes[0];
@@ -118,12 +105,6 @@ export async function generateNewsBriefing(issue: DailyIssue): Promise<NewsBrief
       significance: it.significance,
       confidence: it.confidence,
     });
-  }
-
-  if (items.length < MIN_ITEMS) {
-    throw new Error(
-      `news briefing: only ${items.length}/${parsed.items.length} items link to real markets (min ${MIN_ITEMS})`
-    );
   }
 
   return {
